@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <vector>
 #include <string>
+#include <chrono>
 
 namespace app {
 
@@ -10,6 +11,23 @@ GameApp::GameApp() = default;
 
 GameApp::~GameApp() {
     cleanup();
+}
+
+uint64_t GameApp::generateRandomSeed() {
+    auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    // Trộn bit để tạo seed phân tán đều
+    uint64_t z = static_cast<uint64_t>(now) + 0x9e3779b97f4a7c15ULL;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+void GameApp::regenerateMap(uint64_t seed) {
+    m_currentSeed = seed;
+    m_mapGenerator.generate(m_worldMap, m_currentSeed, m_mapConfig);
+    if (m_window.getSDLRenderer()) {
+        m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap);
+    }
 }
 
 bool GameApp::init() {
@@ -22,7 +40,7 @@ bool GameApp::init() {
     // 2. Mở cửa sổ 1280x720 có thể thay đổi kích thước
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 720;
-    if (!m_window.init("War Strategy - Milestone 1", initialWidth, initialHeight)) {
+    if (!m_window.init("War Strategy - Milestone 2", initialWidth, initialHeight)) {
         std::cerr << "[GameApp] Khoi tao cua so that bai!" << std::endl;
         return false;
     }
@@ -36,7 +54,10 @@ bool GameApp::init() {
     };
     m_textRenderer.init(fontCandidates, 18);
 
-    // 4. Khởi tạo vị trí camera vào trung tâm bản đồ
+    // 4. Sinh bản đồ lần đầu với seed ban đầu
+    regenerateMap(m_currentSeed);
+
+    // 5. Khởi tạo vị trí camera vào trung tâm bản đồ
     int worldW = m_worldMap.getWorldWidth();
     int worldH = m_worldMap.getWorldHeight();
     float startX = (static_cast<float>(worldW) - initialWidth) * 0.5f;
@@ -91,13 +112,32 @@ void GameApp::processEvents() {
         } else if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 m_running = false;
+            } else if (event.key.keysym.sym == SDLK_r) {
+                // Phím R: sinh bản đồ mới với seed ngẫu nhiên
+                regenerateMap(generateRandomSeed());
+            }
+        } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                // Kiểm tra xem người dùng có click vào Minimap không
+                if (m_mapRenderer.handleMinimapClick(event.button.x, event.button.y, winW, winH, m_worldMap, m_camera)) {
+                    m_isDraggingMinimap = true;
+                }
+            }
+        } else if (event.type == SDL_MOUSEBUTTONUP) {
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                m_isDraggingMinimap = false;
+            }
+        } else if (event.type == SDL_MOUSEMOTION) {
+            // Khi đang kéo chuột trên Minimap, liên tục cập nhật vị trí camera
+            if (m_isDraggingMinimap) {
+                m_mapRenderer.handleMinimapClick(event.motion.x, event.motion.y, winW, winH, m_worldMap, m_camera);
             }
         }
 
         // Cập nhật kích thước cửa sổ khi thay đổi
         m_window.handleEvent(event);
 
-        // Sự kiện chuột (lăn chuột zoom)
+        // Sự kiện chuột (lăn chuột zoom camera)
         m_camera.handleEvent(event, winW, winH, worldW, worldH);
     }
 }
@@ -108,8 +148,10 @@ void GameApp::update(float deltaTime) {
     int worldW = m_worldMap.getWorldWidth();
     int worldH = m_worldMap.getWorldHeight();
 
-    // Cập nhật di chuyển camera (phím WASD / mũi tên và rê chuột ra mép)
-    m_camera.update(deltaTime, winW, winH, worldW, worldH);
+    // Cập nhật di chuyển camera (phím WASD / mũi tên và rê chuột ra mép nếu không drag minimap)
+    if (!m_isDraggingMinimap) {
+        m_camera.update(deltaTime, winW, winH, worldW, worldH);
+    }
 
     // Tính toán FPS (cập nhật số liệu mỗi 0.25 giây để hiển thị mượt mà)
     m_frameCount++;
@@ -129,20 +171,26 @@ void GameApp::render() {
     // 1. Xóa màn hình với màu xám đen đậm cho khu vực ngoài biên bản đồ
     m_window.clear(14, 16, 20, 255);
 
-    // 2. Vẽ bản đồ và hệ thống lưới ô 32x32 cho bản đồ 128x96
+    // 2. Vẽ bản đồ thế giới tô màu theo địa hình và Minimap ở góc dưới phải
     m_mapRenderer.render(renderer, m_worldMap, m_camera, winW, winH);
 
-    // 3. Hiển thị FPS và thông tin điều khiển ở góc trên màn hình
-    char fpsBuffer[64];
-    std::snprintf(fpsBuffer, sizeof(fpsBuffer), "FPS: %.0f", m_currentFPS);
+    // 3. Hiển thị FPS và thông tin Seed ở góc trên màn hình
+    char infoBuffer[128];
+    std::snprintf(infoBuffer, sizeof(infoBuffer), "FPS: %.0f", m_currentFPS);
     SDL_Color textColor{240, 240, 240, 255};
-    m_textRenderer.renderText(renderer, fpsBuffer, 16, 16, textColor, true);
+    m_textRenderer.renderText(renderer, infoBuffer, 16, 16, textColor, true);
+
+    char seedBuffer[128];
+    std::snprintf(seedBuffer, sizeof(seedBuffer), "Seed: %llu  |  [R] Tao ban do ngau nhien", static_cast<unsigned long long>(m_currentSeed));
+    SDL_Color seedColor{255, 220, 100, 255};
+    m_textRenderer.renderText(renderer, seedBuffer, 16, 42, seedColor, true);
 
     // 4. Hiển thị khung hình lên cửa sổ
     m_window.present();
 }
 
 void GameApp::cleanup() {
+    m_mapRenderer.cleanup();
     m_textRenderer.cleanup();
     m_window.cleanup();
     SDL_Quit();

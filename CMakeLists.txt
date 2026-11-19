@@ -35,3 +35,17 @@ if(WIN32)
             $<TARGET_FILE_DIR:War_Strategy>
     )
 endif()
+
+# ==============================================================================
+# Testing (M2: Kiem thu map generator tat dinh va ti le 5 dat : 1 bien)
+# ==============================================================================
+enable_testing()
+
+add_executable(test_mapgen
+        tests/test_mapgen.cpp
+        src/mapgen/MapGenerator.cpp
+        src/mapgen/SimplexNoise.cpp
+        src/sim/map/WorldMap.cpp
+)
+target_include_directories(test_mapgen PRIVATE src)
+add_test(NAME test_mapgen COMMAND test_mapgen)

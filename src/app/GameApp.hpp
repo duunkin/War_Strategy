@@ -5,6 +5,10 @@
 #include "../render/MapRenderer.hpp"
 #include "../render/TextRenderer.hpp"
 #include "../sim/map/WorldMap.hpp"
+#include "../mapgen/MapGenerator.hpp"
+#include "../mapgen/MapGenConfig.hpp"
+
+#include <cstdint>
 
 namespace app {
 
@@ -26,14 +30,26 @@ private:
     void render();
     void cleanup();
 
+    // Sinh lại bản đồ theo seed mới
+    void regenerateMap(uint64_t seed);
+
+    // Tạo một seed ngẫu nhiên từ đồng hồ hệ thống và bộ sinh số
+    uint64_t generateRandomSeed();
+
 private:
     bool m_running{false};
 
-    render::Window       m_window;
-    render::Camera       m_camera;
-    render::MapRenderer  m_mapRenderer;
-    render::TextRenderer m_textRenderer;
-    sim::WorldMap        m_worldMap{128, 96, 32}; // 128x96 ô, mỗi ô 32x32
+    render::Window         m_window;
+    render::Camera         m_camera;
+    render::MapRenderer    m_mapRenderer;
+    render::TextRenderer   m_textRenderer;
+    sim::WorldMap          m_worldMap{128, 96, 32}; // 128x96 ô, mỗi ô 32x32
+
+    mapgen::MapGenerator   m_mapGenerator;
+    mapgen::MapGenConfig   m_mapConfig;
+    uint64_t               m_currentSeed{12345678ULL};
+
+    bool                   m_isDraggingMinimap{false};
 
     // Biến đo lường và tính toán FPS
     int   m_frameCount{0};
