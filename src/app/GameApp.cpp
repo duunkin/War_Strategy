@@ -27,6 +27,7 @@ uint64_t GameApp::generateRandomSeed() {
 void GameApp::regenerateMap(uint64_t seed) {
     m_currentSeed = seed;
     m_mapGenerator.generate(m_worldMap, m_currentSeed, m_mapConfig);
+    m_worldSim.spawnPlayerDivisions(m_currentSeed);
     if (m_window.getSDLRenderer()) {
         m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap);
     }
@@ -54,7 +55,7 @@ bool GameApp::init() {
     // 2. Mở cửa sổ 1280x720 có ghi rõ thời gian build ở tiêu đề
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 720;
-    const std::string windowTitle = "War Strategy - Milestone 2 (Build: " __DATE__ " " __TIME__ ")";
+    const std::string windowTitle = "War Strategy - Milestone 3a (Build: " __DATE__ " " __TIME__ ")";
     if (!m_window.init(windowTitle, initialWidth, initialHeight)) {
         std::cerr << "[GameApp] Khoi tao cua so that bai!" << std::endl;
         return false;
@@ -69,7 +70,8 @@ bool GameApp::init() {
     };
     m_textRenderer.init(fontCandidates, 18);
 
-    // 4. Sinh bản đồ lần đầu với seed ban đầu
+    // 4. Nạp cấu hình sim và sinh bản đồ lần đầu với seed ban đầu
+    m_worldSim.loadConfig();
     regenerateMap(m_currentSeed);
 
     // 5. Khởi tạo vị trí camera vào trung tâm bản đồ
@@ -177,6 +179,20 @@ void GameApp::processEvents() {
                 else if (m_mapRenderer.handleMinimapClick(event.button.x, event.button.y, winW, winH, m_worldMap, m_camera)) {
                     m_isDraggingMinimap = true;
                 }
+            } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                // Click chuột phải: ra lệnh cho toàn bộ sư đoàn di chuyển thẳng tới ô đích
+                float worldX = m_camera.screenToWorldX(static_cast<float>(event.button.x));
+                float worldY = m_camera.screenToWorldY(static_cast<float>(event.button.y));
+                int targetTileX = static_cast<int>(worldX) / m_worldMap.getTileSize();
+                int targetTileY = static_cast<int>(worldY) / m_worldMap.getTileSize();
+
+                if (m_worldMap.isInBounds(targetTileX, targetTileY)) {
+                    std::vector<uint32_t> ids;
+                    for (const auto& u : m_worldSim.getUnits()) {
+                        ids.push_back(u.getId());
+                    }
+                    m_worldSim.queueMoveCommand(ids, targetTileX, targetTileY);
+                }
             }
         } else if (event.type == SDL_MOUSEBUTTONUP) {
             if (event.button.button == SDL_BUTTON_LEFT) {
@@ -216,6 +232,15 @@ void GameApp::update(float deltaTime) {
         m_camera.update(deltaTime, winW, winH, worldW, worldH);
     }
 
+    // Cập nhật mô phỏng sim với bước thời gian cố định 20 tick/giây qua accumulator
+    m_simAccumulator += deltaTime;
+    const int tps = m_worldSim.getConfig().getRules().tickPerSecond;
+    const float tickInterval = (tps > 0) ? (1.0f / static_cast<float>(tps)) : 0.05f;
+    while (m_simAccumulator >= tickInterval) {
+        m_simAccumulator -= tickInterval;
+        m_worldSim.tick();
+    }
+
     // Tính toán FPS (cập nhật số liệu mỗi 0.25 giây để hiển thị mượt mà)
     m_frameCount++;
     m_fpsAccumulator += deltaTime;
@@ -236,6 +261,9 @@ void GameApp::render() {
 
     // 2. Vẽ bản đồ thế giới tô màu theo địa hình và Minimap ở góc dưới phải
     m_mapRenderer.render(renderer, m_worldMap, m_camera, winW, winH);
+
+    // 2b. Vẽ các sư đoàn bộ binh (M3a)
+    m_unitRenderer.render(renderer, m_worldSim.getUnits(), m_camera, winW, winH);
 
     // 3. Hiển thị FPS và thông tin Seed ở góc trên bên trái
     char infoBuffer[128];

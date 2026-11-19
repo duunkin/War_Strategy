@@ -20,12 +20,19 @@ FetchContent_Declare(
         GIT_TAG release-2.22.0
 )
 
-FetchContent_MakeAvailable(SDL2 SDL2_ttf)
+FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+        GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(SDL2 SDL2_ttf nlohmann_json)
 
 file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_executable(War_Strategy ${GAME_SOURCES})
 target_include_directories(War_Strategy PRIVATE src)
-target_link_libraries(War_Strategy PRIVATE SDL2::SDL2main SDL2::SDL2 SDL2_ttf::SDL2_ttf)
+target_link_libraries(War_Strategy PRIVATE SDL2::SDL2main SDL2::SDL2 SDL2_ttf::SDL2_ttf nlohmann_json::nlohmann_json)
 
 if(WIN32)
     add_custom_command(TARGET War_Strategy POST_BUILD
@@ -37,7 +44,7 @@ if(WIN32)
 endif()
 
 # ==============================================================================
-# Testing (M2: Kiem thu map generator tat dinh va ti le 5 dat : 1 bien)
+# Testing
 # ==============================================================================
 enable_testing()
 
@@ -49,3 +56,14 @@ add_executable(test_mapgen
 )
 target_include_directories(test_mapgen PRIVATE src)
 add_test(NAME test_mapgen COMMAND test_mapgen)
+
+add_executable(test_units
+        tests/test_units.cpp
+        src/sim/config/SimConfig.cpp
+        src/sim/units/Unit.cpp
+        src/sim/WorldSim.cpp
+        src/sim/map/WorldMap.cpp
+)
+target_include_directories(test_units PRIVATE src)
+target_link_libraries(test_units PRIVATE nlohmann_json::nlohmann_json)
+add_test(NAME test_units COMMAND test_units)

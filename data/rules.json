@@ -1,0 +1,5 @@
+{
+  "meters_per_tile": 100,
+  "tick_per_second": 20,
+  "time_scale": 10
+}

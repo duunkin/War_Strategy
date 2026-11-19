@@ -4,7 +4,9 @@
 #include "../render/Camera.hpp"
 #include "../render/MapRenderer.hpp"
 #include "../render/TextRenderer.hpp"
+#include "../render/UnitRenderer.hpp"
 #include "../sim/map/WorldMap.hpp"
+#include "../sim/WorldSim.hpp"
 #include "../mapgen/MapGenerator.hpp"
 #include "../mapgen/MapGenConfig.hpp"
 
@@ -47,13 +49,16 @@ private:
     render::Camera         m_camera;
     render::MapRenderer    m_mapRenderer;
     render::TextRenderer   m_textRenderer;
+    render::UnitRenderer   m_unitRenderer;
     sim::WorldMap          m_worldMap{128, 96, 32}; // 128x96 ô, mỗi ô 32x32
+    sim::WorldSim          m_worldSim{m_worldMap};
 
     mapgen::MapGenerator   m_mapGenerator;
     mapgen::MapGenConfig   m_mapConfig;
     uint64_t               m_currentSeed{12345678ULL};
 
     bool                   m_isDraggingMinimap{false};
+    float                  m_simAccumulator{0.0f};
 
     // Thông báo hiển thị tạm trên màn hình (ví dụ: "Seed moi: <seed>")
     std::string            m_notificationText;

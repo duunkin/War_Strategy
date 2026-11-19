@@ -1,0 +1,11 @@
+{
+  "infantry_speed_multiplier": {
+    "Plain": 100,
+    "Forest": 60,
+    "Hill": 50,
+    "Mountain": 25,
+    "River": 20,
+    "Sea": 0,
+    "Lake": 0
+  }
+}
