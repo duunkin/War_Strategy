@@ -18,11 +18,14 @@ Mọi thay đổi đáng chú ý của dự án War Strategy sẽ được ghi n
   - `MapRenderer`: Tô màu từng ô theo loại địa hình với bảng màu chiến trường trực quan, có culling tối ưu hiệu năng.
   - Hệ thống `Minimap` ở góc dưới phải màn hình (kích thước 256x192) hiển thị toàn bộ bản đồ thế giới và khung nhìn camera hiện tại.
   - Hỗ trợ click hoặc kéo chuột trên Minimap để camera nhảy tới vị trí tương ứng.
-  - Phím `R`: Sinh bản đồ mới với seed ngẫu nhiên và hiển thị seed trên màn hình cạnh chỉ số FPS.
+  - Phím `R` và `F5` (`SDL_SCANCODE_R`, `SDL_SCANCODE_F5`): Sinh bản đồ mới với seed ngẫu nhiên.
+  - Nút bấm chuột "Tao ban do moi" ở góc trên bên phải màn hình.
+  - Thông báo "Seed moi: <seed>" hiển thị nổi bật trong 2 giây khi đổi bản đồ.
+  - Hiện thời gian build ở tiêu đề cửa sổ (`__DATE__ __TIME__`).
 - **Kiểm thử (Tests)**:
   - Thêm bộ test tự động `tests/test_mapgen.cpp` tích hợp `ctest` kiểm tra tính tất định theo hash, tỉ lệ 5 đất : 1 biển, viền biển và sự hiện diện của 7 loại địa hình.
 ### Đã sửa (Fixed)
-- Sửa lỗi phím `R` không sinh lại bản đồ khi chạy game thực tế: dùng `SDL_SCANCODE_R` thay vì chỉ dùng `SDLK_r` để không bị xung đột với bộ gõ tiếng Việt (Unikey/EVKey) và layout bàn phím, đồng thời kiểm tra `event.key.repeat == 0` để tránh kích hoạt lặp khi giữ phím.
+- Sửa lỗi phím R không sinh lại bản đồ: chuyển sang dùng scancode phần cứng `SDL_SCANCODE_R` và `SDL_SCANCODE_F5`, lọc `repeat == 0`, dọn dẹp các log chẩn đoán vào macro `WS_DEBUG_INPUT`.
 
 ## [M1] - 2026-11-19
 ### Đã thêm (Added)

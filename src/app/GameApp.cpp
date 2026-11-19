@@ -32,6 +32,18 @@ void GameApp::regenerateMap(uint64_t seed) {
     }
 }
 
+SDL_Rect GameApp::getNewMapButtonRect(int screenWidth) const {
+    constexpr int btnW = 180;
+    constexpr int btnH = 38;
+    constexpr int margin = 16;
+    return SDL_Rect{
+        .x = screenWidth - btnW - margin,
+        .y = margin,
+        .w = btnW,
+        .h = btnH
+    };
+}
+
 bool GameApp::init() {
     // 1. Khởi tạo hệ thống video của SDL
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -39,10 +51,11 @@ bool GameApp::init() {
         return false;
     }
 
-    // 2. Mở cửa sổ 1280x720 có thể thay đổi kích thước
+    // 2. Mở cửa sổ 1280x720 có ghi rõ thời gian build ở tiêu đề
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 720;
-    if (!m_window.init("War Strategy - Milestone 2", initialWidth, initialHeight)) {
+    const std::string windowTitle = "War Strategy - Milestone 2 (Build: " __DATE__ " " __TIME__ ")";
+    if (!m_window.init(windowTitle, initialWidth, initialHeight)) {
         std::cerr << "[GameApp] Khoi tao cua so that bai!" << std::endl;
         return false;
     }
@@ -112,22 +125,56 @@ void GameApp::processEvents() {
         if (event.type == SDL_QUIT) {
             m_running = false;
         } else if (event.type == SDL_KEYDOWN) {
+#ifdef WS_DEBUG_INPUT
+            const char* scancodeName = SDL_GetScancodeName(event.key.keysym.scancode);
+            const char* keyName = SDL_GetKeyName(event.key.keysym.sym);
+            SDL_Log("[KEY DOWN] scancode=%d (%s), sym=%d (%s), repeat=%d",
+                    static_cast<int>(event.key.keysym.scancode),
+                    scancodeName ? scancodeName : "Unknown",
+                    static_cast<int>(event.key.keysym.sym),
+                    keyName ? keyName : "Unknown",
+                    static_cast<int>(event.key.repeat));
+            std::fflush(stdout);
+#endif
+
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 m_running = false;
             } else if (event.key.repeat == 0 &&
-                       (event.key.keysym.scancode == SDL_SCANCODE_R || event.key.keysym.sym == SDLK_r)) {
-                // Phím R: sinh bản đồ mới với seed ngẫu nhiên (dùng scancode để không bị ảnh hưởng bởi IME/layout)
+                       (event.key.keysym.scancode == SDL_SCANCODE_R ||
+                        event.key.keysym.scancode == SDL_SCANCODE_F5)) {
+                // Phím R và F5: sinh bản đồ mới với seed ngẫu nhiên
                 uint64_t oldSeed = m_currentSeed;
                 uint64_t newSeed = generateRandomSeed();
                 while (newSeed == oldSeed) {
                     newSeed = generateRandomSeed();
                 }
+
                 regenerateMap(newSeed);
+
+                // Hiển thị thông báo trên màn hình trong 2 giây
+                m_notificationText = "Seed moi: " + std::to_string(newSeed);
+                m_notificationTimer = 2.0f;
             }
         } else if (event.type == SDL_MOUSEBUTTONDOWN) {
             if (event.button.button == SDL_BUTTON_LEFT) {
-                // Kiểm tra xem người dùng có click vào Minimap không
-                if (m_mapRenderer.handleMinimapClick(event.button.x, event.button.y, winW, winH, m_worldMap, m_camera)) {
+                // 1. Kiểm tra bấm vào nút "Tao ban do moi" ở góc trên bên phải
+                SDL_Rect btnRect = getNewMapButtonRect(winW);
+                if (event.button.x >= btnRect.x && event.button.x < btnRect.x + btnRect.w &&
+                    event.button.y >= btnRect.y && event.button.y < btnRect.y + btnRect.h) {
+
+                    uint64_t oldSeed = m_currentSeed;
+                    uint64_t newSeed = generateRandomSeed();
+                    while (newSeed == oldSeed) {
+                        newSeed = generateRandomSeed();
+                    }
+
+                    regenerateMap(newSeed);
+
+                    m_notificationText = "Seed moi: " + std::to_string(newSeed);
+                    m_notificationTimer = 2.0f;
+                }
+                // 2. Kiểm tra xem người dùng có click vào Minimap không
+                else if (m_mapRenderer.handleMinimapClick(event.button.x, event.button.y, winW, winH, m_worldMap, m_camera)) {
                     m_isDraggingMinimap = true;
                 }
             }
@@ -156,6 +203,14 @@ void GameApp::update(float deltaTime) {
     int worldW = m_worldMap.getWorldWidth();
     int worldH = m_worldMap.getWorldHeight();
 
+    // Giảm dần bộ đếm thời gian hiển thị thông báo
+    if (m_notificationTimer > 0.0f) {
+        m_notificationTimer -= deltaTime;
+        if (m_notificationTimer < 0.0f) {
+            m_notificationTimer = 0.0f;
+        }
+    }
+
     // Cập nhật di chuyển camera (phím WASD / mũi tên và rê chuột ra mép nếu không drag minimap)
     if (!m_isDraggingMinimap) {
         m_camera.update(deltaTime, winW, winH, worldW, worldH);
@@ -182,18 +237,40 @@ void GameApp::render() {
     // 2. Vẽ bản đồ thế giới tô màu theo địa hình và Minimap ở góc dưới phải
     m_mapRenderer.render(renderer, m_worldMap, m_camera, winW, winH);
 
-    // 3. Hiển thị FPS và thông tin Seed ở góc trên màn hình
+    // 3. Hiển thị FPS và thông tin Seed ở góc trên bên trái
     char infoBuffer[128];
     std::snprintf(infoBuffer, sizeof(infoBuffer), "FPS: %.0f", m_currentFPS);
     SDL_Color textColor{240, 240, 240, 255};
     m_textRenderer.renderText(renderer, infoBuffer, 16, 16, textColor, true);
 
     char seedBuffer[128];
-    std::snprintf(seedBuffer, sizeof(seedBuffer), "Seed: %llu  |  [R] Tao ban do ngau nhien", static_cast<unsigned long long>(m_currentSeed));
+    std::snprintf(seedBuffer, sizeof(seedBuffer), "Seed: %llu  |  [R / F5] Tao ban do moi", static_cast<unsigned long long>(m_currentSeed));
     SDL_Color seedColor{255, 220, 100, 255};
     m_textRenderer.renderText(renderer, seedBuffer, 16, 42, seedColor, true);
 
-    // 4. Hiển thị khung hình lên cửa sổ
+    // 4. Hiển thị thông báo "Seed moi: <seed>" nếu đang trong thời gian 2 giây
+    if (m_notificationTimer > 0.0f) {
+        SDL_Rect notifBg{16, 70, 360, 32};
+        SDL_SetRenderDrawColor(renderer, 20, 60, 30, 220);
+        SDL_RenderFillRect(renderer, &notifBg);
+        SDL_SetRenderDrawColor(renderer, 60, 220, 100, 255);
+        SDL_RenderDrawRect(renderer, &notifBg);
+
+        SDL_Color notifTextColor{80, 255, 140, 255};
+        m_textRenderer.renderText(renderer, m_notificationText, 24, 76, notifTextColor, false);
+    }
+
+    // 5. Vẽ nút bấm "Tao ban do moi" ở góc trên bên phải
+    SDL_Rect btnRect = getNewMapButtonRect(winW);
+    SDL_SetRenderDrawColor(renderer, 32, 44, 62, 230);
+    SDL_RenderFillRect(renderer, &btnRect);
+    SDL_SetRenderDrawColor(renderer, 220, 190, 90, 255);
+    SDL_RenderDrawRect(renderer, &btnRect);
+
+    SDL_Color btnTextColor{245, 245, 245, 255};
+    m_textRenderer.renderText(renderer, "Tao ban do moi", btnRect.x + 14, btnRect.y + 9, btnTextColor, false);
+
+    // 6. Hiển thị khung hình lên cửa sổ
     m_window.present();
 }
 
