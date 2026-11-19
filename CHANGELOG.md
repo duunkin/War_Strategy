@@ -21,6 +21,8 @@ Mọi thay đổi đáng chú ý của dự án War Strategy sẽ được ghi n
   - Phím `R`: Sinh bản đồ mới với seed ngẫu nhiên và hiển thị seed trên màn hình cạnh chỉ số FPS.
 - **Kiểm thử (Tests)**:
   - Thêm bộ test tự động `tests/test_mapgen.cpp` tích hợp `ctest` kiểm tra tính tất định theo hash, tỉ lệ 5 đất : 1 biển, viền biển và sự hiện diện của 7 loại địa hình.
+### Đã sửa (Fixed)
+- Sửa lỗi phím `R` không sinh lại bản đồ khi chạy game thực tế: dùng `SDL_SCANCODE_R` thay vì chỉ dùng `SDLK_r` để không bị xung đột với bộ gõ tiếng Việt (Unikey/EVKey) và layout bàn phím, đồng thời kiểm tra `event.key.repeat == 0` để tránh kích hoạt lặp khi giữ phím.
 
 ## [M1] - 2026-11-19
 ### Đã thêm (Added)

@@ -14,9 +14,11 @@ GameApp::~GameApp() {
 }
 
 uint64_t GameApp::generateRandomSeed() {
+    static uint64_t counter = 0;
+    counter++;
     auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     // Trộn bit để tạo seed phân tán đều
-    uint64_t z = static_cast<uint64_t>(now) + 0x9e3779b97f4a7c15ULL;
+    uint64_t z = static_cast<uint64_t>(now) + counter * 0x9e3779b97f4a7c15ULL;
     z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
     z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
     return z ^ (z >> 31);
@@ -112,9 +114,15 @@ void GameApp::processEvents() {
         } else if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 m_running = false;
-            } else if (event.key.keysym.sym == SDLK_r) {
-                // Phím R: sinh bản đồ mới với seed ngẫu nhiên
-                regenerateMap(generateRandomSeed());
+            } else if (event.key.repeat == 0 &&
+                       (event.key.keysym.scancode == SDL_SCANCODE_R || event.key.keysym.sym == SDLK_r)) {
+                // Phím R: sinh bản đồ mới với seed ngẫu nhiên (dùng scancode để không bị ảnh hưởng bởi IME/layout)
+                uint64_t oldSeed = m_currentSeed;
+                uint64_t newSeed = generateRandomSeed();
+                while (newSeed == oldSeed) {
+                    newSeed = generateRandomSeed();
+                }
+                regenerateMap(newSeed);
             }
         } else if (event.type == SDL_MOUSEBUTTONDOWN) {
             if (event.button.button == SDL_BUTTON_LEFT) {
