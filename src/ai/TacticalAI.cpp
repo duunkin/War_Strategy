@@ -9,13 +9,20 @@
 namespace ai {
 
 TacticalAI::TacticalAI(sim::Faction controlledFaction, uint64_t seed, const AiParams& params)
-    : m_controlledFaction(controlledFaction), m_params(params), m_rng(seed) {}
+    : m_controlledFaction(controlledFaction), m_params(params), m_rng(seed) {
+    m_lastSnapshot.faction = m_controlledFaction;
+    m_lastSnapshot.params = m_params;
+}
 
 void TacticalAI::reset(uint64_t newSeed) {
     m_rng.setSeed(newSeed);
     m_lastDecisionTick = 0;
     m_isFirstDecision = true;
     m_memory.clear();
+    m_lastSnapshot = AiThoughtSnapshot{};
+    m_lastSnapshot.faction = m_controlledFaction;
+    m_lastSnapshot.params = m_params;
+    m_totalCommandsIssued = 0;
 }
 
 void TacticalAI::update(sim::WorldSim& sim) {
@@ -151,27 +158,147 @@ std::vector<sim::Command> TacticalAI::plan(const sim::WorldSim& sim) {
     }
 
     // 1. Lập kế hoạch cho Tư lệnh (Commander)
+    size_t cmdBeforeCmdr = commands.size();
     if (commander) {
         planCommander(sim, *commander, friendlyUnits, commands);
     }
+    bool cmdFlee = (commands.size() > cmdBeforeCmdr);
 
     // 2. Lập kế hoạch cho Pháo binh (Caesar) & Phòng không (Gepard)
+    size_t cmdBeforeArty = commands.size();
     std::vector<const sim::Unit*> mainForce = heavyTanks;
     mainForce.insert(mainForce.end(), infantry.begin(), infantry.end());
     planArtilleryAndAntiAir(sim, caesars, gepards, commander, mainForce, commands);
+    bool artyAction = (commands.size() > cmdBeforeArty);
 
     // 3. Lập kế hoạch cho Không quân (Su-57, B-2 Spirit)
+    size_t cmdBeforeAir = commands.size();
     planAirForce(sim, su57s, b2s, commands);
+    bool airAction = (commands.size() > cmdBeforeAir);
 
     // 4. Lập kế hoạch cho Thủy quân (Mogami, Asagiri)
+    size_t cmdBeforeNavy = commands.size();
     planNavy(sim, ships, commands);
+    bool navyAction = (commands.size() > cmdBeforeNavy);
 
     // 5. Lập kế hoạch cho Bộ binh & Tăng thiết giáp (Infantry, Puma, Leopard 2A, T-14)
+    size_t cmdBeforeGround = commands.size();
     std::vector<const sim::Unit*> groundStrikeUnits;
     groundStrikeUnits.insert(groundStrikeUnits.end(), pumas.begin(), pumas.end());
     groundStrikeUnits.insert(groundStrikeUnits.end(), heavyTanks.begin(), heavyTanks.end());
     groundStrikeUnits.insert(groundStrikeUnits.end(), infantry.begin(), infantry.end());
     planInfantryAndArmor(sim, groundStrikeUnits, commands);
+    bool groundAction = (commands.size() > cmdBeforeGround);
+
+    // =========================================================================
+    // Cập nhật Snapshot Telemetry (M8)
+    // =========================================================================
+    bool commanderInDanger = false;
+    if (commander) {
+        int comX = commander->getTileX();
+        int comY = commander->getTileY();
+        float safeRadiusSq = m_params.commanderSafeRadiusTiles * m_params.commanderSafeRadiusTiles;
+        for (const auto& enemy : m_memory) {
+            int dx = enemy.lastTileX - comX;
+            int dy = enemy.lastTileY - comY;
+            if (static_cast<float>(dx * dx + dy * dy) <= safeRadiusSq) {
+                commanderInDanger = true;
+                break;
+            }
+        }
+        if (commander->getHp() < commander->getMaxHp()) {
+            commanderInDanger = true;
+        }
+    }
+
+    int visibleEnemies = 0;
+    for (const auto& u : sim.getUnits()) {
+        if (!u.isDead() && u.getFaction() != m_controlledFaction &&
+            u.getFaction() != sim::Faction::Neutral && sim.isUnitVisible(u, m_controlledFaction)) {
+            visibleEnemies++;
+        }
+    }
+
+    int rememberedEnemies = static_cast<int>(m_memory.size());
+    int aliveUnits = static_cast<int>(friendlyUnits.size());
+    int totalTroops = 0;
+    int retreatingUnits = 0;
+    int scoutingUnits = 0;
+    int attackingUnits = 0;
+
+    for (const auto* u : friendlyUnits) {
+        totalTroops += u->getCurrentUnits();
+        float hpRatio = static_cast<float>(u->getHp()) / static_cast<float>(std::max(1, u->getMaxHp()));
+        if (m_params.enableUnitRetreat && hpRatio < m_params.retreatHpRatio) {
+            retreatingUnits++;
+        } else if (u->getType() == sim::UnitType::Puma || (u->getType() == sim::UnitType::Su57 && m_memory.empty())) {
+            scoutingUnits++;
+        } else if (u->getType() == sim::UnitType::Commander) {
+            if (commanderInDanger) retreatingUnits++;
+            else scoutingUnits++;
+        } else {
+            attackingUnits++;
+        }
+    }
+
+    AiPosture posture = AiPosture::Scouting;
+    if (commanderInDanger) {
+        posture = AiPosture::DefendCmd;
+    } else if (retreatingUnits >= 4 || (aliveUnits > 0 && retreatingUnits > aliveUnits / 3)) {
+        posture = AiPosture::Retreating;
+    } else if (rememberedEnemies == 0) {
+        posture = AiPosture::Scouting;
+    } else if (m_params.aggression >= 0.8f && rememberedEnemies >= 4) {
+        posture = AiPosture::AllOut;
+    } else if (rememberedEnemies > 0) {
+        posture = AiPosture::Engaging;
+    } else {
+        posture = AiPosture::Advancing;
+    }
+
+    std::vector<std::string> intents;
+    if (cmdFlee) intents.push_back("CmdFlee");
+    if (artyAction) intents.push_back("ArtyStrike");
+    if (airAction) {
+        if (!m_memory.empty()) intents.push_back("AirHunt");
+        else intents.push_back("AirScout");
+    }
+    if (navyAction) intents.push_back("NavalSupport");
+    if (groundAction) {
+        if (m_memory.empty()) intents.push_back("ScoutFront");
+        else if (m_params.aggression >= 0.7f) intents.push_back("FlankPush");
+        else intents.push_back("HoldForest");
+    }
+    if (intents.empty()) {
+        if (posture == AiPosture::Scouting) intents.push_back("ScoutFront");
+        else if (posture == AiPosture::Engaging) intents.push_back("FocusFire");
+        else intents.push_back("HoldLine");
+    }
+
+    std::string primaryIntentStr = intents[0];
+    if (intents.size() > 1) {
+        primaryIntentStr += "," + intents[1];
+    }
+
+    m_totalCommandsIssued += static_cast<uint32_t>(commands.size());
+
+    m_lastSnapshot.faction = m_controlledFaction;
+    m_lastSnapshot.decisionTick = currentTick;
+    m_lastSnapshot.posture = posture;
+    m_lastSnapshot.primaryIntent = primaryIntentStr;
+    m_lastSnapshot.visibleEnemies = visibleEnemies;
+    m_lastSnapshot.rememberedEnemies = rememberedEnemies;
+    m_lastSnapshot.aliveUnits = aliveUnits;
+    m_lastSnapshot.totalTroops = totalTroops;
+    m_lastSnapshot.commanderHp = commander ? commander->getHp() : 0;
+    m_lastSnapshot.commanderMaxHp = commander ? commander->getMaxHp() : 100;
+    m_lastSnapshot.commanderInDanger = commanderInDanger;
+    m_lastSnapshot.attackingUnits = attackingUnits;
+    m_lastSnapshot.scoutingUnits = scoutingUnits;
+    m_lastSnapshot.retreatingUnits = retreatingUnits;
+    m_lastSnapshot.commandsIssuedThisCycle = static_cast<uint32_t>(commands.size());
+    m_lastSnapshot.totalCommandsIssued = m_totalCommandsIssued;
+    m_lastSnapshot.params = m_params;
 
     return commands;
 }

@@ -13,9 +13,17 @@
  * điều khiển camera (WASD, mũi tên, mép chuột, zoom con lăn chuột) và hiển thị FPS.
  */
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    std::string replayFile;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "--replay" || arg == "-r") && i + 1 < argc) {
+            replayFile = argv[++i];
+        }
+    }
 
     app::GameApp app;
+    if (!replayFile.empty()) {
+        app.setReplayFile(replayFile);
+    }
     return app.run();
 }

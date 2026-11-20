@@ -40,8 +40,14 @@
   - Phím `F3` bật/tắt AI phe Enemy trong runtime để kiểm thử.
   - *Kết quả*: Hoàn thành, 100% test suites passed.
 
-- [ ] **M8: Chế độ Headless, AI vs AI, Replay**
-  - Chạy mô phỏng không giao diện tốc độ cao, ghi log lệnh và phát lại trận đấu.
+- [x] **M8: Chế độ Headless, AI vs AI, Replay**
+  - Tách thư viện lõi tĩnh `war_sim_core` thuần C++20 không phụ thuộc SDL2/Render; executable `War_Strategy_Headless` độc lập tốc độ cao (>1400 ticks/sec, ~70x realtime).
+  - Telemetry suy nghĩ và trạng thái AI (`AiThoughtSnapshot`, `AiTelemetry`) hiển thị chính xác 2 dòng căn cột sạch trên CMD (hỗ trợ cờ `--live`, `--scroll`, `--quiet`).
+  - Hệ thống Replay tất định 100% (`ReplayRecorder`, `ReplayPlayer`): lưu/phát lại từng lệnh `Command` theo tick chuẩn JSON; cùng seed + replay cho ra kết quả khớp 100% từng đơn vị.
+  - Tích hợp trình phát Replay vào bản đồ họa `War_Strategy --replay <file>` với phím điều khiển `Space` (Pause/Resume), `[`/`]` (chỉnh tốc độ 0.5x..8x), HUD hiển thị tiến độ và trạng thái.
+  - Bộ runner headless CLI hỗ trợ `--matches`, `--seed`, `--max-ticks`, nạp/ghi đè tham số `AiParams`, xuất log CSV tổng hợp và lưu replay hàng loạt.
+  - Bộ kiểm thử tự động `tests/test_replay.cpp` kiểm tra tính tất định 100% giữa Live AI vs Replay Playback, Telemetry snapshot và Batch CSV log.
+  - *Kết quả*: Hoàn thành, 7/7 test suites passed 100%.
 
 - [ ] **M9: AI tự tối ưu & Huấn luyện**
   - AI tự tinh chỉnh tham số sau các trận đấu.

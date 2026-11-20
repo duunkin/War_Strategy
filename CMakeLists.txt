@@ -29,10 +29,68 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(SDL2 SDL2_ttf nlohmann_json)
 
-file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS src/*.cpp)
-add_executable(War_Strategy ${GAME_SOURCES})
+# ==============================================================================
+# Core Simulation Static Library (Pure C++20, No SDL2 dependency)
+# ==============================================================================
+set(CORE_SOURCES
+    src/mapgen/FastRng.hpp
+    src/mapgen/MapGenConfig.hpp
+    src/mapgen/MapGenerator.hpp
+    src/mapgen/MapGenerator.cpp
+    src/mapgen/SimplexNoise.hpp
+    src/mapgen/SimplexNoise.cpp
+
+    src/sim/WorldSim.hpp
+    src/sim/WorldSim.cpp
+    src/sim/combat/CombatSystem.hpp
+    src/sim/combat/CombatSystem.cpp
+    src/sim/commands/Command.hpp
+    src/sim/config/SimConfig.hpp
+    src/sim/config/SimConfig.cpp
+    src/sim/map/WorldMap.hpp
+    src/sim/map/WorldMap.cpp
+    src/sim/pathfinding/Pathfinder.hpp
+    src/sim/pathfinding/Pathfinder.cpp
+    src/sim/units/Unit.hpp
+    src/sim/units/Unit.cpp
+    src/sim/vision/VisionSystem.hpp
+    src/sim/vision/VisionSystem.cpp
+
+    src/ai/AiParams.hpp
+    src/ai/AiTelemetry.hpp
+    src/ai/TacticalAI.hpp
+    src/ai/TacticalAI.cpp
+
+    src/replay/Replay.hpp
+    src/replay/Replay.cpp
+)
+
+add_library(war_sim_core STATIC ${CORE_SOURCES})
+target_include_directories(war_sim_core PUBLIC src)
+target_link_libraries(war_sim_core PUBLIC nlohmann_json::nlohmann_json)
+
+# ==============================================================================
+# Graphical Application (War_Strategy: SDL2 + SDL2_ttf)
+# ==============================================================================
+set(GUI_SOURCES
+    src/render/Camera.hpp
+    src/render/Camera.cpp
+    src/render/MapRenderer.hpp
+    src/render/MapRenderer.cpp
+    src/render/TextRenderer.hpp
+    src/render/TextRenderer.cpp
+    src/render/UnitRenderer.hpp
+    src/render/UnitRenderer.cpp
+    src/render/Window.hpp
+    src/render/Window.cpp
+    src/app/GameApp.hpp
+    src/app/GameApp.cpp
+    src/app/main.cpp
+)
+
+add_executable(War_Strategy ${GUI_SOURCES})
 target_include_directories(War_Strategy PRIVATE src)
-target_link_libraries(War_Strategy PRIVATE SDL2::SDL2main SDL2::SDL2 SDL2_ttf::SDL2_ttf nlohmann_json::nlohmann_json)
+target_link_libraries(War_Strategy PRIVATE war_sim_core SDL2::SDL2main SDL2::SDL2 SDL2_ttf::SDL2_ttf)
 
 if(WIN32)
     add_custom_command(TARGET War_Strategy POST_BUILD
@@ -44,85 +102,48 @@ if(WIN32)
 endif()
 
 # ==============================================================================
+# Headless Runner Executable (War_Strategy_Headless: Pure C++20, NO SDL2)
+# ==============================================================================
+add_executable(War_Strategy_Headless src/headless/main_headless.cpp)
+target_include_directories(War_Strategy_Headless PRIVATE src)
+target_link_libraries(War_Strategy_Headless PRIVATE war_sim_core)
+
+# ==============================================================================
 # Testing
 # ==============================================================================
 enable_testing()
 
-add_executable(test_mapgen
-        tests/test_mapgen.cpp
-        src/mapgen/MapGenerator.cpp
-        src/mapgen/SimplexNoise.cpp
-        src/sim/map/WorldMap.cpp
-)
+add_executable(test_mapgen tests/test_mapgen.cpp)
 target_include_directories(test_mapgen PRIVATE src)
+target_link_libraries(test_mapgen PRIVATE war_sim_core)
 add_test(NAME test_mapgen COMMAND test_mapgen)
 
-add_executable(test_units
-        tests/test_units.cpp
-        src/mapgen/MapGenerator.cpp
-        src/mapgen/SimplexNoise.cpp
-        src/sim/config/SimConfig.cpp
-        src/sim/units/Unit.cpp
-        src/sim/WorldSim.cpp
-        src/sim/map/WorldMap.cpp
-        src/sim/pathfinding/Pathfinder.cpp
-        src/sim/combat/CombatSystem.cpp
-        src/sim/vision/VisionSystem.cpp
-)
+add_executable(test_units tests/test_units.cpp)
 target_include_directories(test_units PRIVATE src)
-target_link_libraries(test_units PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_units PRIVATE war_sim_core)
 add_test(NAME test_units COMMAND test_units)
 
-add_executable(test_pathfinding
-        tests/test_pathfinding.cpp
-        src/sim/config/SimConfig.cpp
-        src/sim/map/WorldMap.cpp
-        src/sim/pathfinding/Pathfinder.cpp
-)
+add_executable(test_pathfinding tests/test_pathfinding.cpp)
 target_include_directories(test_pathfinding PRIVATE src)
-target_link_libraries(test_pathfinding PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_pathfinding PRIVATE war_sim_core)
 add_test(NAME test_pathfinding COMMAND test_pathfinding)
 
-add_executable(test_combat
-        tests/test_combat.cpp
-        src/sim/config/SimConfig.cpp
-        src/sim/units/Unit.cpp
-        src/sim/WorldSim.cpp
-        src/sim/map/WorldMap.cpp
-        src/sim/pathfinding/Pathfinder.cpp
-        src/sim/combat/CombatSystem.cpp
-        src/sim/vision/VisionSystem.cpp
-)
+add_executable(test_combat tests/test_combat.cpp)
 target_include_directories(test_combat PRIVATE src)
-target_link_libraries(test_combat PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_combat PRIVATE war_sim_core)
 add_test(NAME test_combat COMMAND test_combat)
 
-add_executable(test_vision
-        tests/test_vision.cpp
-        src/sim/config/SimConfig.cpp
-        src/sim/units/Unit.cpp
-        src/sim/WorldSim.cpp
-        src/sim/map/WorldMap.cpp
-        src/sim/pathfinding/Pathfinder.cpp
-        src/sim/combat/CombatSystem.cpp
-        src/sim/vision/VisionSystem.cpp
-)
+add_executable(test_vision tests/test_vision.cpp)
 target_include_directories(test_vision PRIVATE src)
-target_link_libraries(test_vision PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_vision PRIVATE war_sim_core)
 add_test(NAME test_vision COMMAND test_vision)
 
-add_executable(test_ai
-        tests/test_ai.cpp
-        src/ai/TacticalAI.cpp
-        src/sim/config/SimConfig.cpp
-        src/sim/units/Unit.cpp
-        src/sim/WorldSim.cpp
-        src/sim/map/WorldMap.cpp
-        src/sim/pathfinding/Pathfinder.cpp
-        src/sim/combat/CombatSystem.cpp
-        src/sim/vision/VisionSystem.cpp
-)
+add_executable(test_ai tests/test_ai.cpp)
 target_include_directories(test_ai PRIVATE src)
-target_link_libraries(test_ai PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_ai PRIVATE war_sim_core)
 add_test(NAME test_ai COMMAND test_ai)
 
+add_executable(test_replay tests/test_replay.cpp)
+target_include_directories(test_replay PRIVATE src)
+target_link_libraries(test_replay PRIVATE war_sim_core)
+add_test(NAME test_replay COMMAND test_replay)

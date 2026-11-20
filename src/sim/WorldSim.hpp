@@ -10,6 +10,7 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <functional>
 
 namespace sim {
 
@@ -33,6 +34,10 @@ public:
 
     // Tiện ích gửi lệnh di chuyển cho danh sách đơn vị tới ô đích
     void queueMoveCommand(const std::vector<uint32_t>& unitIds, int targetTileX, int targetTileY);
+
+    // Hook lắng nghe các lệnh được gửi vào WorldSim (cho ReplayRecorder)
+    using CommandHook = std::function<void(uint64_t tick, const Command& cmd)>;
+    void setCommandHook(CommandHook hook) { m_commandHook = std::move(hook); }
 
     // Thực hiện 1 bước mô phỏng cố định (1 tick)
     void tick();
@@ -92,6 +97,7 @@ private:
     SimConfig            m_config;
     std::vector<Unit>    m_units;
     std::vector<Command> m_commandQueue;
+    CommandHook          m_commandHook;
     uint64_t             m_currentTick{0};
 
     // Bộ sinh số ngẫu nhiên cho chiến đấu, lưu trữ trạng thái tất định

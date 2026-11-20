@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AiParams.hpp"
+#include "AiTelemetry.hpp"
 #include "../sim/WorldSim.hpp"
 #include "../sim/commands/Command.hpp"
 #include "../sim/units/Unit.hpp"
@@ -58,6 +59,8 @@ public:
     [[nodiscard]] sim::Faction getFaction() const { return m_controlledFaction; }
     [[nodiscard]] uint64_t getLastDecisionTick() const { return m_lastDecisionTick; }
     [[nodiscard]] const std::vector<EnemyMemoryRecord>& getMemory() const { return m_memory; }
+    [[nodiscard]] const AiThoughtSnapshot& getSnapshot() const { return m_lastSnapshot; }
+    [[nodiscard]] uint32_t getTotalCommandsIssued() const { return m_totalCommandsIssued; }
 
 private:
     // Cập nhật bộ nhớ tình báo từ các đơn vị địch nhìn thấy được
@@ -113,6 +116,8 @@ private:
     uint64_t                       m_lastDecisionTick{0};
     bool                           m_isFirstDecision{true};
     std::vector<EnemyMemoryRecord> m_memory;
+    AiThoughtSnapshot              m_lastSnapshot;
+    uint32_t                       m_totalCommandsIssued{0};
 };
 
 } // namespace ai

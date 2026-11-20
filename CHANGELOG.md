@@ -2,6 +2,31 @@
 
 Mọi thay đổi đáng chú ý của dự án War Strategy sẽ được ghi nhận tại đây.
 
+## [M8] - 2026-11-20
+### Đã thêm (Added)
+- **Tách kiến trúc thư viện lõi `war_sim_core` (Pure C++20, No SDL2)**:
+  - Gom toàn bộ logic mô phỏng chiến trường (`src/mapgen/`, `src/sim/`, `src/ai/`, `src/replay/`) thành thư viện tĩnh `war_sim_core`, hoàn toàn không phụ thuộc SDL2 hay SDL2_ttf.
+  - Executable đồ họa `War_Strategy` liên kết `war_sim_core` + SDL2 + SDL2_ttf.
+  - Executable mới `War_Strategy_Headless` CHỈ liên kết `war_sim_core`, chạy tốc độ cao độc lập trên terminal không cần môi trường GUI.
+  - Toàn bộ 7 bộ unit test tái sử dụng `war_sim_core` giúp tối ưu hóa thời gian biên dịch.
+- **AI Telemetry & Hiển thị 2 dòng Console (`src/ai/AiTelemetry.hpp`)**:
+  - `AiThoughtSnapshot`: Cấu trúc dữ liệu gọn nhẹ ghi nhận trạng thái suy nghĩ tức thời của AI (Posture: `SCOUTING`, `ADVANCING`, `ENGAGING`, `DEFEND_CMD`, `RETREATING`, `ALL_OUT`; Ý đồ nổi bật `primaryIntent`: `CmdFlee`, `ArtyStrike`, `AirHunt`, `B2Raid`, `NavalSupport`, `FlankPush`, `HoldForest`, `ScoutFront`; số địch thấy/nhớ qua FoW; phân bổ vai trò `Attacking`/`Scouting`/`Retreating`; đếm số lệnh phát ra).
+  - Hàm `formatTelemetryLine`: Định dạng đúng chuẩn 2 dòng trên console, căn thẳng cột bằng ký tự ASCII sạch, không bao giờ lỗi font trên CMD Windows.
+  - Hỗ trợ 3 chế độ hiển thị: `--live` (cập nhật tại chỗ 2 dòng qua ANSI cursor-up `\033[2A\r` + Win32 `ENABLE_VIRTUAL_TERMINAL_PROCESSING`), `--scroll` (cuộn từng cặp 2 dòng), `--quiet` (chỉ in tóm tắt kết quả).
+  - Điều tiết I/O console tối đa ~20fps để đảm bảo tốc độ mô phỏng đạt tối đa (~70x - 80x realtime).
+- **Hệ thống Replay tất định 100% (`src/replay/Replay.hpp`, `Replay.cpp`)**:
+  - `ReplayRecorder`: Ghi nhận toàn bộ lệnh `Command` đi vào `WorldSim` theo từng tick qua `CommandHook`, lưu file JSON chuẩn (`seed`, `maxTicks`, `ai1Params`, `ai2Params`, metadata kết quả và payload danh sách lệnh).
+  - `ReplayPlayer`: Nạp file replay và bơm chính xác các lệnh vào `WorldSim` tại đúng tick tương ứng mà không cần chạy `TacticalAI`.
+  - Tích hợp xem Replay trên bản đồ họa SDL2: Chạy trực tiếp `War_Strategy --replay <file.json>`. Khóa quyền điều khiển quân của người chơi, phím `Space` tạm dừng/tiếp tục, phím `[` và `]` hoặc `-` / `+` điều chỉnh tốc độ phát (`0.5x`, `1x`, `2x`, `4x`, `8x`), HUD hiển thị trạng thái `REPLAY MODE` và tiến độ tick.
+- **Chương trình Headless Runner (`src/headless/main_headless.cpp`)**:
+  - Hỗ trợ đầy đủ cờ CLI: `--matches <N>`, `--seed <uint64>`, `--max-ticks <N>`, `--ai1-params <file>`, `--ai2-params <file>`, `--ai1-agg <val>`, `--ai2-agg <val>`, `--print-every <ticks>`, `--live`, `--scroll`, `--quiet`, `--log <file.csv>`, `--save-replay <file>`, `--replay-dir <dir>`, `--help`.
+  - Ghi log CSV tổng hợp từng trận: `match_id,seed,winner,end_reason,ticks,sim_seconds,wall_ms,ai1_units,ai1_troops,ai1_cmd_hp,ai2_units,ai2_troops,ai2_cmd_hp,ai1_cmds,ai2_cmds`.
+  - Bảng tổng kết ANSI/ASCII cuối đợt: thống kê tỉ số AI1/AI2/Draw, phân loại lý do kết thúc, đo lường tốc độ mô phỏng trung bình (`ticks/sec` và `x realtime`).
+- **Kiểm thử tự động (`tests/test_replay.cpp`)**:
+  - `testReplayDeterminism`: Chạy trận đấu AI vs AI 600 ticks ghi replay -> phát lại trên `WorldSim` mới độc lập -> chứng minh 100% (56/56 đơn vị) khớp tuyệt đối về tọa độ X/Y, HP, quân số và kết quả trận đấu giữa Live và Replay.
+  - `testAiTelemetry`: Kiểm tra snapshot trạng thái AI và định dạng 2 dòng CMD.
+  - `testBatchAndCsvLog`: Kiểm tra chạy batch nhiều trận, ghi file CSV và tính bất biến kết quả theo seed.
+
 ## [M7] - 2026-11-20
 ### Đã thêm (Added)
 - **Module Trí tuệ nhân tạo (Tactical AI - `src/ai/`)**:

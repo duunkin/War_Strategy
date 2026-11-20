@@ -88,6 +88,24 @@ bool GameApp::init() {
         std::cerr << "[GameApp] LOI: Khong the nap cau hinh game_config.json!" << std::endl;
         return false;
     }
+
+    // M8: Nếu có nạp file Replay, tải file và đồng bộ seed
+    if (!m_replayPath.empty()) {
+        if (m_replayPlayer.loadFromFile(m_replayPath)) {
+            m_isReplayMode = true;
+            m_aiEnabled = false; // Tắt AI live khi xem replay
+            m_currentSeed = m_replayPlayer.getSeed();
+            std::cout << "[GameApp] REPLAY MODE: Nap thanh cong " << m_replayPath
+                      << " | Seed: " << m_currentSeed
+                      << " | Records: " << m_replayPlayer.getRecordCount()
+                      << " | FinalTick: " << m_replayPlayer.getFinalTick() << std::endl;
+            m_notificationText = "[REPLAY MODE] Da nap replay thanh cong!";
+            m_notificationTimer = 3.0f;
+        } else {
+            std::cerr << "[GameApp] LOI: Khong the mo file replay: " << m_replayPath << std::endl;
+        }
+    }
+
     regenerateMap(m_currentSeed);
 
     m_running = true;
@@ -171,9 +189,34 @@ void GameApp::processEvents() {
                 m_notificationText = m_aiEnabled ? "[DEBUG F3] AI Phe Do (Enemy): BAT"
                                                  : "[DEBUG F3] AI Phe Do (Enemy): TAT (Dung yen)";
                 m_notificationTimer = 2.0f;
+            } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_SPACE && m_isReplayMode) {
+                m_replayPaused = !m_replayPaused;
+                m_notificationText = m_replayPaused ? "[REPLAY] TAM DUNG (PAUSED)" : "[REPLAY] TIEP TUC (PLAYING)";
+                m_notificationTimer = 1.5f;
+            } else if (event.key.repeat == 0 && m_isReplayMode &&
+                       (event.key.keysym.sym == SDLK_LEFTBRACKET || event.key.keysym.sym == SDLK_MINUS || event.key.keysym.sym == SDLK_KP_MINUS)) {
+                if (m_replaySpeed >= 8.0f) m_replaySpeed = 4.0f;
+                else if (m_replaySpeed >= 4.0f) m_replaySpeed = 2.0f;
+                else if (m_replaySpeed >= 2.0f) m_replaySpeed = 1.0f;
+                else if (m_replaySpeed >= 1.0f) m_replaySpeed = 0.5f;
+                m_notificationText = "[REPLAY] Toc do: " + std::to_string(m_replaySpeed).substr(0, 3) + "x";
+                m_notificationTimer = 1.5f;
+            } else if (event.key.repeat == 0 && m_isReplayMode &&
+                       (event.key.keysym.sym == SDLK_RIGHTBRACKET || event.key.keysym.sym == SDLK_PLUS || event.key.keysym.sym == SDLK_EQUALS || event.key.keysym.sym == SDLK_KP_PLUS)) {
+                if (m_replaySpeed <= 0.5f) m_replaySpeed = 1.0f;
+                else if (m_replaySpeed <= 1.0f) m_replaySpeed = 2.0f;
+                else if (m_replaySpeed <= 2.0f) m_replaySpeed = 4.0f;
+                else if (m_replaySpeed <= 4.0f) m_replaySpeed = 8.0f;
+                m_notificationText = "[REPLAY] Toc do: " + std::to_string(m_replaySpeed).substr(0, 3) + "x";
+                m_notificationTimer = 1.5f;
             } else if (event.key.repeat == 0 &&
                        (event.key.keysym.scancode == SDL_SCANCODE_R ||
                         event.key.keysym.scancode == SDL_SCANCODE_F5)) {
+                if (m_isReplayMode) {
+                    m_notificationText = "[REPLAY MODE] Khong the doi ban do khi dang phat replay!";
+                    m_notificationTimer = 2.0f;
+                    continue;
+                }
                 // Phím R và F5: sinh bản đồ mới với seed ngẫu nhiên
                 uint64_t oldSeed = m_currentSeed;
                 uint64_t newSeed = generateRandomSeed();
@@ -198,6 +241,11 @@ void GameApp::processEvents() {
                 // 1. Kiểm tra xem người dùng có click vào nút "Tao ban do moi" không
                 if (event.button.x >= btnRect.x && event.button.x <= btnRect.x + btnRect.w &&
                     event.button.y >= btnRect.y && event.button.y <= btnRect.y + btnRect.h) {
+                    if (m_isReplayMode) {
+                        m_notificationText = "[REPLAY MODE] Khong the doi ban do khi dang phat replay!";
+                        m_notificationTimer = 2.0f;
+                        continue;
+                    }
                     uint64_t oldSeed = m_currentSeed;
                     uint64_t newSeed = generateRandomSeed();
                     while (newSeed == oldSeed) {
@@ -222,6 +270,10 @@ void GameApp::processEvents() {
                     m_isBoxSelecting = true;
                 }
             } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                // Trong Replay Mode, khóa nhận lệnh điều khiển quân của người chơi
+                if (m_isReplayMode) {
+                    continue;
+                }
                 // Click chuột phải:
                 // M6: Chuột phải trên minimap ra lệnh di chuyển cho các chấm đang chọn tới điểm tương ứng
                 int targetTileX = 0;
@@ -382,13 +434,18 @@ void GameApp::update(float deltaTime) {
     }
 
     // Cập nhật mô phỏng sim với bước thời gian cố định 20 tick/giây qua accumulator
-    m_simAccumulator += deltaTime;
+    if (!m_isReplayMode || !m_replayPaused) {
+        float effectiveDt = m_isReplayMode ? (deltaTime * m_replaySpeed) : deltaTime;
+        m_simAccumulator += effectiveDt;
+    }
     const int tps = m_worldSim.getConfig().getTickRate();
     const float tickInterval = (tps > 0) ? (1.0f / static_cast<float>(tps)) : 0.05f;
     bool simTicked = false;
     while (m_simAccumulator >= tickInterval) {
         m_simAccumulator -= tickInterval;
-        if (m_aiEnabled) {
+        if (m_isReplayMode) {
+            m_replayPlayer.applyCommandsForTick(m_worldSim.getCurrentTick(), m_worldSim);
+        } else if (m_aiEnabled) {
             m_enemyAI.update(m_worldSim);
         }
         m_worldSim.tick();
@@ -505,6 +562,27 @@ void GameApp::render() {
     SDL_RenderDrawRect(renderer, &timerBg);
     SDL_Color timerColor{235, 245, 255, 255};
     m_textRenderer.renderText(renderer, timerBuffer, timerX + 16, timerY + 7, timerColor, false);
+
+    // 4b. Hiển thị banner Replay Mode nổi bật (M8)
+    if (m_isReplayMode) {
+        char repBuf[160];
+        std::snprintf(repBuf, sizeof(repBuf), "[REPLAY MODE] %s (%.1fx) | Tick: %llu/%llu | [Space: Pause, [-][+]: Speed, F2: FOW]",
+                      m_replayPaused ? "PAUSED" : "PLAYING",
+                      m_replaySpeed,
+                      static_cast<unsigned long long>(m_worldSim.getCurrentTick()),
+                      static_cast<unsigned long long>(m_replayPlayer.getFinalTick()));
+        int rW = 680;
+        int rH = 32;
+        int rX = (winW - rW) / 2;
+        int rY = 56;
+        SDL_Rect rBg{rX, rY, rW, rH};
+        SDL_SetRenderDrawColor(renderer, 25, 25, 40, 235);
+        SDL_RenderFillRect(renderer, &rBg);
+        SDL_SetRenderDrawColor(renderer, 255, 200, 50, 255);
+        SDL_RenderDrawRect(renderer, &rBg);
+        SDL_Color repColor{255, 225, 90, 255};
+        m_textRenderer.renderText(renderer, repBuf, rX + 14, rY + 7, repColor, false);
+    }
 
     // 5. Hiển thị thông báo tạm nếu đang trong thời gian timer
     if (m_notificationTimer > 0.0f) {

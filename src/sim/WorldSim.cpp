@@ -21,6 +21,9 @@ bool WorldSim::loadConfig() {
 }
 
 void WorldSim::queueCommand(const Command& cmd) {
+    if (m_commandHook) {
+        m_commandHook(m_currentTick, cmd);
+    }
     m_commandQueue.push_back(cmd);
 }
 

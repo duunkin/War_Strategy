@@ -10,6 +10,7 @@
 #include "../mapgen/MapGenerator.hpp"
 #include "../mapgen/MapGenConfig.hpp"
 #include "../ai/TacticalAI.hpp"
+#include "../replay/Replay.hpp"
 
 #include <cstdint>
 #include <string>
@@ -29,6 +30,9 @@ public:
 
     // Sinh lại bản đồ theo seed mới
     void regenerateMap(uint64_t seed);
+
+    // Cấu hình Replay (M8)
+    void setReplayFile(const std::string& path) { m_replayPath = path; }
 
     // Tạo một seed ngẫu nhiên từ đồng hồ hệ thống và bộ sinh số
     uint64_t generateRandomSeed();
@@ -85,6 +89,13 @@ private:
     // AI chiến thuật phe Enemy (M7)
     ai::TacticalAI m_enemyAI{sim::Faction::Enemy, 12345678ULL};
     bool           m_aiEnabled{true};
+
+    // Hệ thống Replay (M8)
+    std::string          m_replayPath;
+    bool                 m_isReplayMode{false};
+    bool                 m_replayPaused{false};
+    float                m_replaySpeed{1.0f};
+    replay::ReplayPlayer m_replayPlayer;
 };
 
 } // namespace app
