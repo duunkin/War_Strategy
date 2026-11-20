@@ -144,6 +144,13 @@ void GameApp::processEvents() {
 
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 m_running = false;
+            } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F1) {
+                // TODO: [DEBUG ONLY - F1] Xóa chế độ điều khiển thử nghiệm này khi tích hợp AI
+                m_worldSim.toggleControlledFaction();
+                bool isPlayer = (m_worldSim.getControlledFaction() == sim::Faction::Player);
+                m_notificationText = isPlayer ? "[DEBUG F1] Dang dieu khien: PHE XANH (Player)"
+                                              : "[DEBUG F1] Dang dieu khien: PHE DO (Enemy)";
+                m_notificationTimer = 2.0f;
             } else if (event.key.repeat == 0 &&
                        (event.key.keysym.scancode == SDL_SCANCODE_R ||
                         event.key.keysym.scancode == SDL_SCANCODE_F5)) {
@@ -191,16 +198,17 @@ void GameApp::processEvents() {
                     m_isBoxSelecting = true;
                 }
             } else if (event.button.button == SDL_BUTTON_RIGHT) {
-                // Click chuột phải: ra lệnh di chuyển cho các chấm Player đang được chọn
+                // Click chuột phải: ra lệnh di chuyển cho các chấm của phe đang điều khiển (Player hoặc Enemy qua F1)
                 float worldX = m_camera.screenToWorldX(static_cast<float>(event.button.x));
                 float worldY = m_camera.screenToWorldY(static_cast<float>(event.button.y));
                 int targetTileX = static_cast<int>(worldX) / m_worldMap.getTileSize();
                 int targetTileY = static_cast<int>(worldY) / m_worldMap.getTileSize();
 
                 if (m_worldMap.isInBounds(targetTileX, targetTileY)) {
+                    sim::Faction ctrlFaction = m_worldSim.getControlledFaction();
                     std::vector<uint32_t> selectedIds;
                     for (const auto& u : m_worldSim.getUnits()) {
-                        if (u.isSelected() && u.getFaction() == sim::Faction::Player) {
+                        if (u.isSelected() && u.getFaction() == ctrlFaction) {
                             selectedIds.push_back(u.getId());
                         }
                     }
@@ -218,11 +226,12 @@ void GameApp::processEvents() {
                     int dragDist = std::max(std::abs(m_boxCurrentX - m_boxStartX), std::abs(m_boxCurrentY - m_boxStartY));
                     bool shiftHeld = (SDL_GetModState() & KMOD_SHIFT) != 0;
                     float pixelScale = static_cast<float>(m_worldSim.getConfig().getTilePixels());
+                    sim::Faction ctrlFaction = m_worldSim.getControlledFaction();
 
                     // A. Click đơn lẻ (kéo thả <= 5 pixel)
                     if (dragDist <= 5) {
-                        uint32_t clickedPlayerId = 0;
-                        uint32_t clickedEnemyId = 0;
+                        uint32_t clickedControlledId = 0;
+                        uint32_t clickedOtherId = 0;
                         float bestDistSq = 999999.0f;
 
                         for (const auto& u : m_worldSim.getUnits()) {
@@ -235,34 +244,34 @@ void GameApp::processEvents() {
                             float hitRadius = std::max(12.0f, 16.0f * m_camera.getZoom());
                             if (dSq <= hitRadius * hitRadius && dSq < bestDistSq) {
                                 bestDistSq = dSq;
-                                if (u.getFaction() == sim::Faction::Player) {
-                                    clickedPlayerId = u.getId();
-                                    clickedEnemyId = 0;
+                                if (u.getFaction() == ctrlFaction) {
+                                    clickedControlledId = u.getId();
+                                    clickedOtherId = 0;
                                 } else {
-                                    clickedEnemyId = u.getId();
-                                    clickedPlayerId = 0;
+                                    clickedOtherId = u.getId();
+                                    clickedControlledId = 0;
                                 }
                             }
                         }
 
-                        if (clickedPlayerId != 0) {
+                        if (clickedControlledId != 0) {
                             if (!shiftHeld) {
                                 for (auto& u : m_worldSim.getUnits()) {
-                                    u.setSelected(u.getId() == clickedPlayerId);
+                                    u.setSelected(u.getId() == clickedControlledId);
                                 }
                             } else {
-                                auto* u = m_worldSim.getUnitById(clickedPlayerId);
+                                auto* u = m_worldSim.getUnitById(clickedControlledId);
                                 if (u) u->setSelected(!u->isSelected());
                             }
-                            m_inspectedUnitId = clickedPlayerId;
-                        } else if (clickedEnemyId != 0) {
-                            // Chấm Enemy chỉ để xem, chưa có lệnh
+                            m_inspectedUnitId = clickedControlledId;
+                        } else if (clickedOtherId != 0) {
+                            // Chấm phe đối diện chỉ để xem, không nhận lệnh
                             if (!shiftHeld) {
                                 for (auto& u : m_worldSim.getUnits()) {
                                     u.setSelected(false);
                                 }
                             }
-                            m_inspectedUnitId = clickedEnemyId;
+                            m_inspectedUnitId = clickedOtherId;
                         } else {
                             // Click chuột trái vào chỗ trống: bỏ chọn
                             if (!shiftHeld) {
@@ -282,7 +291,7 @@ void GameApp::processEvents() {
 
                         uint32_t firstSelected = 0;
                         for (auto& u : m_worldSim.getUnits()) {
-                            if (u.isDead() || u.getFaction() != sim::Faction::Player) continue;
+                            if (u.isDead() || u.getFaction() != ctrlFaction) continue;
 
                             float wx = static_cast<float>(u.getPosX()) * pixelScale / 1000.0f;
                             float wy = static_cast<float>(u.getPosY()) * pixelScale / 1000.0f;
@@ -372,6 +381,9 @@ void GameApp::render() {
     // 2b. Vẽ các đơn vị quân đội theo phe và đường đi (M4)
     m_unitRenderer.render(renderer, m_worldSim.getUnits(), m_camera, winW, winH, m_worldSim.getConfig().getTilePixels());
 
+    // 2b2. Vẽ các đường đạn đang hoạt động trên chiến trường (M5)
+    m_unitRenderer.renderTracers(renderer, m_worldSim.getActiveTracers(), m_camera, winW, winH, m_worldSim.getConfig().getTilePixels());
+
     // 2c. Vẽ khung chữ nhật kéo thả chọn quân nếu đang drag
     if (m_isBoxSelecting) {
         m_unitRenderer.renderSelectionBox(renderer, m_boxStartX, m_boxStartY, m_boxCurrentX, m_boxCurrentY);
@@ -405,19 +417,44 @@ void GameApp::render() {
     SDL_Color seedColor{255, 220, 100, 255};
     m_textRenderer.renderText(renderer, seedBuffer, 16, 42, seedColor, true);
 
-    // 4. Hiển thị thông báo "Seed moi: <seed>" nếu đang trong thời gian 2 giây
+    // TODO: [DEBUG ONLY - F1] Xóa chế độ điều khiển thử nghiệm này khi tích hợp AI
+    bool isPlayerCtrl = (m_worldSim.getControlledFaction() == sim::Faction::Player);
+    char f1Buffer[96];
+    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1 DEBUG] Dieu khien: %s", isPlayerCtrl ? "PHE XANH (Player)" : "PHE DO (Enemy)");
+    SDL_Color f1Color = isPlayerCtrl ? SDL_Color{100, 200, 255, 255} : SDL_Color{255, 120, 110, 255};
+    m_textRenderer.renderText(renderer, f1Buffer, 16, 68, f1Color, true);
+
+    // 4. Hiển thị đồng hồ thời gian còn lại của trận đấu ở giữa phía trên màn hình (M5)
+    int remainingSec = m_worldSim.getRemainingTimeSec();
+    int mm = remainingSec / 60;
+    int ss = remainingSec % 60;
+    char timerBuffer[64];
+    std::snprintf(timerBuffer, sizeof(timerBuffer), "Con lai: %02d:%02d", mm, ss);
+    int timerW = 160;
+    int timerH = 32;
+    int timerX = (winW - timerW) / 2;
+    int timerY = 16;
+    SDL_Rect timerBg{timerX, timerY, timerW, timerH};
+    SDL_SetRenderDrawColor(renderer, 20, 26, 36, 230);
+    SDL_RenderFillRect(renderer, &timerBg);
+    SDL_SetRenderDrawColor(renderer, 70, 160, 240, 255);
+    SDL_RenderDrawRect(renderer, &timerBg);
+    SDL_Color timerColor{235, 245, 255, 255};
+    m_textRenderer.renderText(renderer, timerBuffer, timerX + 16, timerY + 7, timerColor, false);
+
+    // 5. Hiển thị thông báo tạm nếu đang trong thời gian timer
     if (m_notificationTimer > 0.0f) {
-        SDL_Rect notifBg{16, 70, 360, 32};
+        SDL_Rect notifBg{16, 96, 400, 32};
         SDL_SetRenderDrawColor(renderer, 20, 60, 30, 220);
         SDL_RenderFillRect(renderer, &notifBg);
         SDL_SetRenderDrawColor(renderer, 60, 220, 100, 255);
         SDL_RenderDrawRect(renderer, &notifBg);
 
         SDL_Color notifTextColor{80, 255, 140, 255};
-        m_textRenderer.renderText(renderer, m_notificationText, 24, 76, notifTextColor, false);
+        m_textRenderer.renderText(renderer, m_notificationText, 24, 102, notifTextColor, false);
     }
 
-    // 5. Vẽ nút bấm "Tao ban do moi" ở góc trên bên phải
+    // 6. Vẽ nút bấm "Tao ban do moi" ở góc trên bên phải
     SDL_Rect btnRect = getNewMapButtonRect(winW);
     SDL_SetRenderDrawColor(renderer, 32, 44, 62, 230);
     SDL_RenderFillRect(renderer, &btnRect);
@@ -426,6 +463,44 @@ void GameApp::render() {
 
     SDL_Color btnTextColor{245, 245, 245, 255};
     m_textRenderer.renderText(renderer, "Tao ban do moi", btnRect.x + 14, btnRect.y + 9, btnTextColor, false);
+
+    // 7. Bảng kết quả trận đấu giữa màn hình khi ván kết thúc (M5)
+    if (m_worldSim.isGameOver()) {
+        const auto& endInfo = m_worldSim.getMatchEndInfo();
+        int dialogW = 560;
+        int dialogH = 170;
+        int dialogX = (winW - dialogW) / 2;
+        int dialogY = (winH - dialogH) / 2;
+
+        SDL_Rect modalBg{dialogX, dialogY, dialogW, dialogH};
+        SDL_SetRenderDrawColor(renderer, 15, 18, 26, 245);
+        SDL_RenderFillRect(renderer, &modalBg);
+
+        SDL_Color headerColor{255, 255, 255, 255};
+        std::string headerText;
+        if (endInfo.result == sim::MatchResult::Victory) {
+            headerText = "=== CHIEN THANG ===";
+            headerColor = SDL_Color{80, 240, 120, 255};
+            SDL_SetRenderDrawColor(renderer, 60, 220, 100, 255);
+        } else if (endInfo.result == sim::MatchResult::Defeat) {
+            headerText = "=== THAT BAI ===";
+            headerColor = SDL_Color{255, 75, 75, 255};
+            SDL_SetRenderDrawColor(renderer, 240, 50, 50, 255);
+        } else {
+            headerText = "=== HOA TRAN ===";
+            headerColor = SDL_Color{255, 220, 80, 255};
+            SDL_SetRenderDrawColor(renderer, 250, 200, 60, 255);
+        }
+        SDL_RenderDrawRect(renderer, &modalBg);
+
+        m_textRenderer.renderText(renderer, headerText, dialogX + 175, dialogY + 20, headerColor, false);
+        SDL_Color reasonColor{240, 240, 240, 255};
+        m_textRenderer.renderText(renderer, endInfo.reason, dialogX + 24, dialogY + 70, reasonColor, false);
+
+        std::string restartHint = "[R / F5] Tao tran dau moi  |  [ESC] Thoat";
+        SDL_Color hintColor{180, 190, 205, 255};
+        m_textRenderer.renderText(renderer, restartHint, dialogX + 120, dialogY + 120, hintColor, false);
+    }
 
     // 6. Hiển thị khung hình lên cửa sổ
     m_window.present();

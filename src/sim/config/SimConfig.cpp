@@ -101,6 +101,7 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
     m_scale.tileMeters = jScale.value("tileMeters", 50);
     m_scale.tilePixels = jScale.value("tilePixels", 32);
     m_scale.tickRate = jScale.value("tickRate", 20);
+    m_matchDurationSec = root.value("matchDurationSec", 3600);
     if (jScale.contains("mapTiles") && jScale["mapTiles"].is_array() && jScale["mapTiles"].size() >= 2) {
         m_scale.mapWidth = jScale["mapTiles"][0].get<int>();
         m_scale.mapHeight = jScale["mapTiles"][1].get<int>();

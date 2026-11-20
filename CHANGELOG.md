@@ -2,6 +2,41 @@
 
 Mọi thay đổi đáng chú ý của dự án War Strategy sẽ được ghi nhận tại đây.
 
+## [M5] - 2026-11-20
+### Đã thêm (Added)
+- **Hệ thống chiến đấu cơ bản (Basic Combat)**:
+  - Công thức sát thương fixed-point `int64_t` tỉ lệ 1000 (không làm tròn từng phát, chỉ áp mức tối thiểu 1 ở tổng sát thương cả đợt).
+  - Nội suy tuyến tính liên tục giữa các mốc giáp (bỏ toàn bộ ngưỡng bậc thang cho HE, AP, súng bộ binh).
+  - Tự động chọn vũ khí gây tổng sát thương lớn nhất lên mục tiêu đang nhắm.
+  - Tự động quét và nhắm mục tiêu địch gần nhất trong tầm bắn theo quy tắc miền hoạt động (`canTargetAir/Ground/Sea`).
+  - Quy tắc tàu chiến: chỉ tàu mới bắn được tàu, tàu bắn được tàu khác và bắn vào bờ, không bắn máy bay.
+  - Sát thương nổ lan (Splash): tính độc lập theo giáp và phân loại của từng chấm địch bị trúng trong bán kính splash (hệ số 55%).
+  - Cơ chế đạn nổ và đạn xuyên giáp chống hạm (AP) cho tàu Mogami và Asagiri.
+  - Trạng thái tất định 100% nhờ bộ sinh số `FastRng` trong `WorldSim`, duyệt các chấm theo thứ tự id cố định.
+- **Điều kiện thắng thua & Hết giờ**:
+  - Thua khi Tư lệnh chết. Thắng khi Tư lệnh địch chết hoặc địch hết quân (chỉ còn tư lệnh). Hòa khi cả hai bên cùng hết quân.
+  - Hết thời gian (`matchDurationSec`, mặc định 3600s): bên có tổng quân gộp nhiều hơn thắng; bằng nhau thì hòa.
+  - Khi trận đấu kết thúc: dừng mô phỏng, hiện bảng thông báo kết quả giữa màn hình (Thắng / Thua / Hòa và lý do).
+- **Hiển thị & Giao diện**:
+  - Vẽ đường đạn ngắn (tracers) giữa chấm bắn và mục tiêu, tự động biến mất sau 3 tick.
+  - Hiển thị đồng hồ đếm ngược thời gian ván đấu ở giữa phía trên màn hình.
+  - Thanh máu và quân số cập nhật thời gian thực khi chịu sát thương.
+  - Chế độ Debug phím `F1`: đổi phe đang điều khiển giữa Player (Xanh) và Enemy (Đỏ), có nhãn thông báo trực quan.
+- **Công cụ & Kiểm thử**:
+  - `tools/calc_ttk.py`: Script tính toán và cân bằng chỉ số TTK khớp 100% với code C++.
+  - `tests/test_combat.cpp`: Bộ kiểm thử toàn diện khóa công thức sát thương, quy tắc nhắm bắn, splash, suy giảm hỏa lực do thương vong, điều kiện thắng thua và tính tất định.
+
+## [M4] - 2026-11-20
+### Đã thêm (Added)
+- Hệ thống chọn quân chuột đơn lẻ, click chọn và kéo vùng chữ nhật (box selection).
+- Thuật toán tìm đường A* 8 hướng tránh góc cắt chéo, rải quân thông minh phân tán đích đến.
+- Bảng thông tin đơn vị (info panel) hiển thị loại, quân số, máu, tốc độ và giáp.
+
+## [M3] - 2026-11-20
+### Đã thêm (Added)
+- Nạp cấu hình 11 loại đơn vị và 8 loại địa hình từ `data/game_config.json`.
+- Sinh 30 chấm quân mỗi bên đối xứng qua bản đồ với tỉ lệ quân số thực tế.
+
 ## [M2] - 2026-11-19
 ### Đã thêm (Added)
 - **Sinh bản đồ tất định (Map Generation)**:

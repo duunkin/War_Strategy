@@ -16,6 +16,7 @@
     "otherUnitsPerSide": 610,
     "dotsPerSide": 30
   },
+  "matchDurationSec": 3600,
   "combatModel": {
     "dotHp": "N_alive x hpPerUnit; N_alive = ceil(hpDot / hpPerUnit)",
     "dotVolley": "mỗi lần bắn: N_alive phát, mỗi phát dmg x rounds x accuracy (sau khi qua giáp)",
@@ -404,6 +405,11 @@
       "cooldownTicks": 26,
       "weapons": [
         {
+          "ammo": "AP",
+          "dmg": 300,
+          "splash": 0
+        },
+        {
           "ammo": "HE",
           "dmg": 300,
           "splash": 1.5
@@ -426,6 +432,11 @@
       "visionTiles": 11,
       "cooldownTicks": 34,
       "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 150,
+          "splash": 0
+        },
         {
           "ammo": "HE",
           "dmg": 150,

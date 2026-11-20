@@ -263,4 +263,56 @@ void UnitRenderer::renderInfoPanel(SDL_Renderer* renderer,
     textRenderer.renderText(renderer, line3, panelX + 12, panelY + 82, cyanColor, false);
 }
 
+void UnitRenderer::renderTracers(SDL_Renderer* renderer,
+                                 const std::vector<sim::Tracer>& tracers,
+                                 const Camera& camera,
+                                 int screenWidth,
+                                 int screenHeight,
+                                 int tilePixels) {
+    if (!renderer || tracers.empty()) return;
+
+    float pixelScale = static_cast<float>(tilePixels);
+
+    for (const auto& t : tracers) {
+        float startWx = static_cast<float>(t.startPosX) * pixelScale / 1000.0f;
+        float startWy = static_cast<float>(t.startPosY) * pixelScale / 1000.0f;
+        float endWx = static_cast<float>(t.endPosX) * pixelScale / 1000.0f;
+        float endWy = static_cast<float>(t.endPosY) * pixelScale / 1000.0f;
+
+        float sx1 = camera.worldToScreenX(startWx);
+        float sy1 = camera.worldToScreenY(startWy);
+        float sx2 = camera.worldToScreenX(endWx);
+        float sy2 = camera.worldToScreenY(endWy);
+
+        float minX = std::min(sx1, sx2);
+        float maxX = std::max(sx1, sx2);
+        float minY = std::min(sy1, sy2);
+        float maxY = std::max(sy1, sy2);
+        if (maxX < 0 || minX > screenWidth || maxY < 0 || minY > screenHeight) {
+            continue;
+        }
+
+        int x1 = static_cast<int>(sx1);
+        int y1 = static_cast<int>(sy1);
+        int x2 = static_cast<int>(sx2);
+        int y2 = static_cast<int>(sy2);
+
+        if (t.ammoType == "HE") {
+            SDL_SetRenderDrawColor(renderer, 255, 140, 30, 240);
+            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+            SDL_SetRenderDrawColor(renderer, 255, 230, 100, 255);
+            SDL_RenderDrawLine(renderer, x1 + 1, y1, x2 + 1, y2);
+        } else {
+            SDL_SetRenderDrawColor(renderer, 255, 245, 140, 240);
+            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 220, 255);
+            SDL_RenderDrawLine(renderer, x1, y1 + 1, x2, y2 + 1);
+        }
+
+        SDL_Rect impactDot{x2 - 2, y2 - 2, 5, 5};
+        SDL_SetRenderDrawColor(renderer, 255, 255, 200, 255);
+        SDL_RenderFillRect(renderer, &impactDot);
+    }
+}
+
 } // namespace render

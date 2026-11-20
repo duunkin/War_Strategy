@@ -7,6 +7,7 @@
 #endif
 
 #include "../sim/units/Unit.hpp"
+#include "../sim/combat/CombatSystem.hpp"
 #include <vector>
 
 namespace render {
@@ -35,6 +36,14 @@ public:
                 int screenWidth,
                 int screenHeight,
                 int tilePixels = 32);
+
+    // Vẽ các đường đạn đang hoạt động trên chiến trường (M5)
+    void renderTracers(SDL_Renderer* renderer,
+                       const std::vector<sim::Tracer>& tracers,
+                       const Camera& camera,
+                       int screenWidth,
+                       int screenHeight,
+                       int tilePixels = 32);
 
     // Vẽ khung chữ nhật kéo thả chọn quân
     void renderSelectionBox(SDL_Renderer* renderer, int startX, int startY, int currentX, int currentY);

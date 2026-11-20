@@ -57,6 +57,10 @@ public:
     [[nodiscard]] float getRangeTiles() const { return m_rangeTiles; }
     [[nodiscard]] int getVisionTiles() const { return m_visionTiles; }
     [[nodiscard]] int getCooldownTicks() const { return m_cooldownTicks; }
+    [[nodiscard]] int getCooldownRemaining() const { return m_cooldownRemaining; }
+    void setCooldownRemaining(int cd) { m_cooldownRemaining = cd; }
+    void decrementCooldown() { if (m_cooldownRemaining > 0) m_cooldownRemaining--; }
+    void resetCooldown() { m_cooldownRemaining = m_cooldownTicks; }
     [[nodiscard]] const std::vector<WeaponConfig>& getWeapons() const { return m_weapons; }
 
     // Khả năng nhắm mục tiêu & hiển thị
@@ -133,6 +137,7 @@ private:
     float       m_rangeTiles{1.0f};
     int         m_visionTiles{7};
     int         m_cooldownTicks{20};
+    int         m_cooldownRemaining{0};
     std::vector<WeaponConfig> m_weapons;
 
     bool        m_canTargetAir{false};

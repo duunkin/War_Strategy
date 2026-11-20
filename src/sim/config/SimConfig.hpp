@@ -150,9 +150,11 @@ public:
     [[nodiscard]] int getTickRate() const { return m_scale.tickRate; }
     [[nodiscard]] int getTilePixels() const { return m_scale.tilePixels; }
     [[nodiscard]] int getTileMeters() const { return m_scale.tileMeters; }
+    [[nodiscard]] int getMatchDurationSec() const { return m_matchDurationSec; }
 
 private:
     ScaleConfig m_scale;
+    int m_matchDurationSec{3600};
     std::vector<TerrainProperty> m_terrains; // 8 loại theo id 0..7
     std::vector<UnitTypeConfig>  m_unitConfigs;
 };

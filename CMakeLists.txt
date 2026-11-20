@@ -64,6 +64,7 @@ add_executable(test_units
         src/sim/WorldSim.cpp
         src/sim/map/WorldMap.cpp
         src/sim/pathfinding/Pathfinder.cpp
+        src/sim/combat/CombatSystem.cpp
 )
 target_include_directories(test_units PRIVATE src)
 target_link_libraries(test_units PRIVATE nlohmann_json::nlohmann_json)
@@ -78,3 +79,16 @@ add_executable(test_pathfinding
 target_include_directories(test_pathfinding PRIVATE src)
 target_link_libraries(test_pathfinding PRIVATE nlohmann_json::nlohmann_json)
 add_test(NAME test_pathfinding COMMAND test_pathfinding)
+
+add_executable(test_combat
+        tests/test_combat.cpp
+        src/sim/config/SimConfig.cpp
+        src/sim/units/Unit.cpp
+        src/sim/WorldSim.cpp
+        src/sim/map/WorldMap.cpp
+        src/sim/pathfinding/Pathfinder.cpp
+        src/sim/combat/CombatSystem.cpp
+)
+target_include_directories(test_combat PRIVATE src)
+target_link_libraries(test_combat PRIVATE nlohmann_json::nlohmann_json)
+add_test(NAME test_combat COMMAND test_combat)

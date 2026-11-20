@@ -4,9 +4,12 @@
 #include "units/Unit.hpp"
 #include "commands/Command.hpp"
 #include "config/SimConfig.hpp"
+#include "combat/CombatSystem.hpp"
+#include "../mapgen/FastRng.hpp"
 
 #include <vector>
 #include <cstdint>
+#include <string>
 
 namespace sim {
 
@@ -46,12 +49,44 @@ public:
     [[nodiscard]] const WorldMap& getMap() const { return m_map; }
     [[nodiscard]] uint64_t getCurrentTick() const { return m_currentTick; }
 
+    // Chiến đấu & Kết quả ván đấu (M5)
+    [[nodiscard]] bool isGameOver() const { return m_matchEndInfo.result != MatchResult::InProgress; }
+    [[nodiscard]] const MatchEndInfo& getMatchEndInfo() const { return m_matchEndInfo; }
+    [[nodiscard]] const std::vector<Tracer>& getActiveTracers() const { return m_activeTracers; }
+    [[nodiscard]] uint64_t getMatchDurationTicks() const {
+        return static_cast<uint64_t>(m_config.getMatchDurationSec()) * m_config.getTickRate();
+    }
+    [[nodiscard]] int getRemainingTimeSec() const;
+
+    // Chế độ Debug phím F1 (M5)
+    [[nodiscard]] Faction getControlledFaction() const { return m_controlledFaction; }
+    void setControlledFaction(Faction f) { m_controlledFaction = f; }
+    void toggleControlledFaction() {
+        m_controlledFaction = (m_controlledFaction == Faction::Player) ? Faction::Enemy : Faction::Player;
+    }
+
+    // Các hàm xử lý nội bộ
+    void resolveCombat();
+    void checkMatchConditions();
+
 private:
     WorldMap&            m_map;
     SimConfig            m_config;
     std::vector<Unit>    m_units;
     std::vector<Command> m_commandQueue;
     uint64_t             m_currentTick{0};
+
+    // Bộ sinh số ngẫu nhiên cho chiến đấu, lưu trữ trạng thái tất định
+    mapgen::FastRng      m_combatRng{12345678ULL};
+
+    // Danh sách đường đạn đang hiển thị
+    std::vector<Tracer>  m_activeTracers;
+
+    // Trạng thái kết thúc ván đấu
+    MatchEndInfo         m_matchEndInfo;
+
+    // Phe đang được điều khiển (Mặc định: Player, F1 đổi sang Enemy để debug)
+    Faction              m_controlledFaction{Faction::Player};
 };
 
 } // namespace sim
