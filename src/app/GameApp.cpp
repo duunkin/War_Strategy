@@ -28,6 +28,7 @@ void GameApp::regenerateMap(uint64_t seed) {
     m_currentSeed = seed;
     m_mapGenerator.generate(m_worldMap, m_currentSeed, m_mapConfig);
     m_worldSim.spawnPlayerDivisions(m_currentSeed);
+    m_enemyAI.reset(m_currentSeed);
     if (m_window.getSDLRenderer()) {
         sim::Faction viewingFaction = m_worldSim.getControlledFaction();
         m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(viewingFaction), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
@@ -57,7 +58,7 @@ bool GameApp::init() {
     // 2. Mở cửa sổ 1280x720 có ghi rõ thời gian build ở tiêu đề
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 720;
-    const std::string windowTitle = "War Strategy - Milestone 6 (Build: " __DATE__ " " __TIME__ ")";
+    const std::string windowTitle = "War Strategy - Milestone 7 (Build: " __DATE__ " " __TIME__ ")";
     if (!m_window.init(windowTitle, initialWidth, initialHeight)) {
         std::cerr << "[GameApp] Khoi tao cua so that bai!" << std::endl;
         return false;
@@ -162,6 +163,12 @@ void GameApp::processEvents() {
                     m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(vf), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
                     m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(vf), m_worldSim.getUnits(), vf, m_debugFogDisabled);
                 }
+            } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F3) {
+                // [DEBUG F3] Bật/tắt AI phe Enemy để kiểm thử
+                m_aiEnabled = !m_aiEnabled;
+                m_notificationText = m_aiEnabled ? "[DEBUG F3] AI Phe Do (Enemy): BAT"
+                                                 : "[DEBUG F3] AI Phe Do (Enemy): TAT (Dung yen)";
+                m_notificationTimer = 2.0f;
             } else if (event.key.repeat == 0 &&
                        (event.key.keysym.scancode == SDL_SCANCODE_R ||
                         event.key.keysym.scancode == SDL_SCANCODE_F5)) {
@@ -379,6 +386,9 @@ void GameApp::update(float deltaTime) {
     bool simTicked = false;
     while (m_simAccumulator >= tickInterval) {
         m_simAccumulator -= tickInterval;
+        if (m_aiEnabled) {
+            m_enemyAI.update(m_worldSim);
+        }
         m_worldSim.tick();
         simTicked = true;
     }
@@ -466,12 +476,13 @@ void GameApp::render() {
     SDL_Color seedColor{255, 220, 100, 255};
     m_textRenderer.renderText(renderer, seedBuffer, 16, 42, seedColor, true);
 
-    // TODO: [DEBUG ONLY - F1 & F2]
+    // TODO: [DEBUG ONLY - F1 & F2 & F3]
     bool isPlayerCtrl = (viewingFaction == sim::Faction::Player);
-    char f1Buffer[128];
-    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s",
+    char f1Buffer[160];
+    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s  |  [F3] AI: %s",
                   isPlayerCtrl ? "PHE XANH (Player)" : "PHE DO (Enemy)",
-                  m_debugFogDisabled ? "TAT (Debug)" : "BAT");
+                  m_debugFogDisabled ? "TAT (Debug)" : "BAT",
+                  m_aiEnabled ? "BAT" : "TAT");
     SDL_Color f1Color = isPlayerCtrl ? SDL_Color{100, 200, 255, 255} : SDL_Color{255, 120, 110, 255};
     m_textRenderer.renderText(renderer, f1Buffer, 16, 68, f1Color, true);
 

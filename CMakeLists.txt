@@ -108,3 +108,19 @@ add_executable(test_vision
 target_include_directories(test_vision PRIVATE src)
 target_link_libraries(test_vision PRIVATE nlohmann_json::nlohmann_json)
 add_test(NAME test_vision COMMAND test_vision)
+
+add_executable(test_ai
+        tests/test_ai.cpp
+        src/ai/TacticalAI.cpp
+        src/sim/config/SimConfig.cpp
+        src/sim/units/Unit.cpp
+        src/sim/WorldSim.cpp
+        src/sim/map/WorldMap.cpp
+        src/sim/pathfinding/Pathfinder.cpp
+        src/sim/combat/CombatSystem.cpp
+        src/sim/vision/VisionSystem.cpp
+)
+target_include_directories(test_ai PRIVATE src)
+target_link_libraries(test_ai PRIVATE nlohmann_json::nlohmann_json)
+add_test(NAME test_ai COMMAND test_ai)
+

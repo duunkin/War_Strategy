@@ -9,6 +9,7 @@
 #include "../sim/WorldSim.hpp"
 #include "../mapgen/MapGenerator.hpp"
 #include "../mapgen/MapGenConfig.hpp"
+#include "../ai/TacticalAI.hpp"
 
 #include <cstdint>
 #include <string>
@@ -80,6 +81,10 @@ private:
     // Chế độ Debug phím F2 bật/tắt sương mù (M6)
     // TODO: [DEBUG ONLY - F2] Xóa chế độ tắt sương mù này khi hoàn thiện game
     bool     m_debugFogDisabled{false};
+
+    // AI chiến thuật phe Enemy (M7)
+    ai::TacticalAI m_enemyAI{sim::Faction::Enemy, 12345678ULL};
+    bool           m_aiEnabled{true};
 };
 
 } // namespace app

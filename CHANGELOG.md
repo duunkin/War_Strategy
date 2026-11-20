@@ -2,6 +2,27 @@
 
 Mọi thay đổi đáng chú ý của dự án War Strategy sẽ được ghi nhận tại đây.
 
+## [M7] - 2026-11-20
+### Đã thêm (Added)
+- **Module Trí tuệ nhân tạo (Tactical AI - `src/ai/`)**:
+  - `TacticalAI`: Thiết kế class AI nhận tham số `Faction` điều khiển độc lập, thuần C++20, không phụ thuộc SDL2/Render, sẵn sàng cho chế độ Headless AI vs AI (M8) và huấn luyện tự học (M9).
+  - `AiParams`: Cấu trúc tham số chiến thuật tập trung (`decisionIntervalTicks`, `aggression`, `retreatHpRatio`, `commanderSafeRadiusTiles`, `artilleryStandOffMargin`, `scoutingWeight`, `focusFireWeight`, `targetMemoryTicks`, v.v.).
+  - Giao tiếp thuần túy qua struct `Command` của `WorldSim`, không can thiệp trực tiếp dữ liệu `Unit`.
+  - Đảm bảo tính tất định 100% bằng bộ sinh số ngẫu nhiên `FastRng` theo seed, không dùng `std::rand` hay đồng hồ hệ thống.
+  - Tuân thủ nghiêm ngặt Sương mù chiến tranh (Fog of War): chỉ quan sát địch qua `VisionSystem::isUnitVisibleToFaction`, tôn trọng tuyệt đối cơ chế tàng hình của Tư lệnh ngoài 50m, quản lý vị trí cuối cùng thấy địch (`EnemyMemoryRecord`) với thời gian hết hạn (`targetMemoryTicks`).
+- **Chiến thuật thông minh cho 5 quân chủng**:
+  - **Tư lệnh (Commander)**: Ưu tiên bảo toàn tính mạng, tự động tháo chạy theo hướng ngược lại hiểm họa khi địch lọt vào bán kính nguy hiểm hoặc khi chịu sát thương; ưu tiên chọn ô an toàn tại Rừng/Đồi hoặc phía sau cụm quân chủ lực.
+  - **Pháo binh (Caesar)**: Giữ cự ly tầm xa stand-off lý tưởng (80% range), tự động lùi né khi địch áp sát dưới 5 ô, ưu tiên nã pháo vào cụm bộ binh và pháo/tăng địch lộ diện.
+  - **Phòng không (Gepard)**: Ưu tiên phát hiện và đánh chặn không quân địch (`Su-57`, `B-2 Spirit`); khi không có máy bay địch sẽ hộ tống bám sát Caesar và Tư lệnh để che chắn phòng không.
+  - **Không quân (Su-57 & B-2 Spirit)**: Su-57 tuần tra trinh sát sâu mở sương mù và săn máy bay địch; B-2 Spirit ưu tiên oanh tạc các mục tiêu giá trị cao (Caesar, tăng hạng nặng, Tư lệnh) và chủ động né tránh các vị trí đã phát hiện pháo Gepard của đối phương.
+  - **Thủy quân (Mogami & Asagiri)**: 100% chỉ di chuyển trên các ô biển hợp lệ, tuần duyên mở rộng tầm nhìn bờ biển, ưu tiên tiêu diệt tàu chiến địch hoặc chi viện hỏa lực từ biển vào các mục tiêu lục quân địch ven bờ.
+  - **Bộ binh & Tăng thiết giáp**: Chia mũi trinh sát tiền tiêu (Puma) mở sương mù đa hướng, tăng chủ lực (Leopard 2A, T-14) tiến công chiếm giữ các vị trí xung yếu, bộ binh tận dụng địa hình Rừng/Đồi để phòng thủ và phục kích; tự động rút lui khi máu giảm dưới ngưỡng `retreatHpRatio`.
+- **Tích hợp ứng dụng & Debug**:
+  - Tích hợp `TacticalAI` điều khiển phe Enemy đồng bộ theo chu kỳ tick của `WorldSim` trong `GameApp`.
+  - Phím `F3`: Bật/tắt AI phe Enemy trong thời gian thực, có hiển thị trạng thái trên HUD và thông báo trực quan.
+- **Kiểm thử tự động (`tests/test_ai.cpp`)**:
+  - Bộ kiểm thử 4/4 kịch bản: Tính tất định 100% giữa các lần chạy, Tuân thủ Fog-of-War và Tư lệnh tàng hình, Hành vi chiến thuật 5 quân chủng (Commander retreat, Ship on water only, Caesar stand-off), và trận đấu mô phỏng AI vs AI headless 200 ticks.
+
 ## [M5] - 2026-11-20
 ### Đã thêm (Added)
 - **Hệ thống chiến đấu cơ bản (Basic Combat)**:

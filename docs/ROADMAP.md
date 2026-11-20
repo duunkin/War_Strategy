@@ -32,8 +32,13 @@
 - [ ] **M6: Giao diện người dùng (UI) & Âm thanh**
   - Thanh thông tin đơn vị, ghép nhóm phím tắt (Ctrl+1..9), âm thanh hiệu ứng.
 
-- [ ] **M7: Trí tuệ nhân tạo (AI) chiến thuật**
-  - Cây hành vi (Behavior Tree), chiến thuật đánh úp, rút lui, bảo vệ Tư lệnh.
+- [x] **M7: Trí tuệ nhân tạo (AI) chiến thuật**
+  - AI chiến thuật độc lập phe phái (`TacticalAI`, `AiParams`) thuần C++20, không phụ thuộc render.
+  - Tuân thủ 100% sương mù chiến tranh (Fog of War) và cơ chế tàng hình của Tư lệnh.
+  - Tất định 100% qua bộ sinh số `FastRng`, xuất lệnh qua struct `Command` chuẩn.
+  - Chiến thuật 5 quân chủng: Tư lệnh né giao tranh tháo chạy về rừng/đồi; Caesar stand-off cự ly xa; Gepard đánh chặn máy bay và bảo vệ chỉ huy; Su-57/B-2 trinh sát, oanh tạc mục tiêu giá trị cao và né Gepard; Tàu chiến Mogami/Asagiri tuần duyên và yểm trợ hỏa lực ven bờ; Tăng thiết giáp và bộ binh trinh sát đa hướng, chiếm giữ rừng/đồi, rút lui khi trọng thương.
+  - Phím `F3` bật/tắt AI phe Enemy trong runtime để kiểm thử.
+  - *Kết quả*: Hoàn thành, 100% test suites passed.
 
 - [ ] **M8: Chế độ Headless, AI vs AI, Replay**
   - Chạy mô phỏng không giao diện tốc độ cao, ghi log lệnh và phát lại trận đấu.
