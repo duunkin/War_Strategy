@@ -66,6 +66,17 @@ public:
         m_controlledFaction = (m_controlledFaction == Faction::Player) ? Faction::Enemy : Faction::Player;
     }
 
+    // Sương mù chiến tranh & Tầm nhìn (M6)
+    void updateVision();
+    void initElevationGrid();
+    [[nodiscard]] const std::vector<uint8_t>& getElevationGrid() const { return m_elevationGrid; }
+    [[nodiscard]] const std::vector<uint8_t>& getFogMap(Faction f) const {
+        return (f == Faction::Player) ? m_fogPlayer : m_fogEnemy;
+    }
+    [[nodiscard]] bool isTileVisible(int x, int y, Faction f) const;
+    [[nodiscard]] bool isUnitVisible(const Unit& u, Faction observerFaction) const;
+    [[nodiscard]] double getLastVisionUpdateTimeMs() const { return m_lastVisionUpdateTimeMs; }
+
     // Các hàm xử lý nội bộ
     void resolveCombat();
     void checkMatchConditions();
@@ -88,6 +99,12 @@ private:
 
     // Phe đang được điều khiển (Mặc định: Player, F1 đổi sang Enemy để debug)
     Faction              m_controlledFaction{Faction::Player};
+
+    // Sương mù chiến tranh cho từng phe (M6)
+    std::vector<uint8_t> m_elevationGrid;
+    std::vector<uint8_t> m_fogPlayer;
+    std::vector<uint8_t> m_fogEnemy;
+    double               m_lastVisionUpdateTimeMs{0.0};
 };
 
 } // namespace sim

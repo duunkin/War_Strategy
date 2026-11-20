@@ -84,6 +84,7 @@ struct UnitTypeConfig {
     bool canTargetSea{false};
     float stealthRevealRangeTiles{0.0f};
     int iconSizeTiles{1};
+    int elevation{0};
 };
 
 /**
@@ -98,7 +99,16 @@ struct TerrainProperty {
     float defBonus{0.0f};
     int visionMod{0};
     int rangeMod{0};
+    int elevation{0};
     bool ambush{false};
+};
+
+/**
+ * @brief Cấu hình hệ thống tầm nhìn
+ */
+struct VisionConfig {
+    int airElevation{4};
+    int commanderRevealTicks{40};
 };
 
 /**
@@ -151,10 +161,12 @@ public:
     [[nodiscard]] int getTilePixels() const { return m_scale.tilePixels; }
     [[nodiscard]] int getTileMeters() const { return m_scale.tileMeters; }
     [[nodiscard]] int getMatchDurationSec() const { return m_matchDurationSec; }
+    [[nodiscard]] const VisionConfig& getVisionConfig() const { return m_visionConfig; }
 
 private:
     ScaleConfig m_scale;
     int m_matchDurationSec{3600};
+    VisionConfig m_visionConfig;
     std::vector<TerrainProperty> m_terrains; // 8 loại theo id 0..7
     std::vector<UnitTypeConfig>  m_unitConfigs;
 };

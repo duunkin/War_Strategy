@@ -9,40 +9,39 @@
 #include "../sim/units/Unit.hpp"
 #include "../sim/combat/CombatSystem.hpp"
 #include <vector>
+#include <functional>
 
 namespace render {
 class Camera;
 class TextRenderer;
 
 /**
- * @brief Lớp UnitRenderer vẽ các chấm quân đội, vòng chọn sáng, đường đi A* và bảng thông tin.
- *
- * Mốc M4:
- * - Vẽ vòng sáng cho các chấm đang được chọn.
- * - Vẽ đường đi nối từ vị trí hiện tại qua các waypoints tới đích (màu sáng thanh mảnh, tự ngắn lại).
- * - Vẽ dấu đích đến: dấu bình thường hoặc dấu cảnh báo nếu đích đã được điều chỉnh.
- * - Vẽ khung chữ nhật kéo thả chọn quân (box selection).
- * - Vẽ bảng thông tin nhỏ hiển thị chi tiết đơn vị (loại, quân số, máu, tốc độ).
+ * @brief Lớp UnitRenderer vẽ các chấm quân đội, vòng chọn sáng, đường đi A*, đường đạn và bảng thông tin.
  */
 class UnitRenderer {
 public:
     UnitRenderer() = default;
     ~UnitRenderer() = default;
 
-    // Vẽ toàn bộ đơn vị và các đường đi của các đơn vị đang chọn
+    // Vẽ toàn bộ đơn vị và các đường đi của các đơn vị đang chọn (lọc theo tầm nhìn sương mù - M6)
     void render(SDL_Renderer* renderer,
                 const std::vector<sim::Unit>& units,
                 const Camera& camera,
                 int screenWidth,
                 int screenHeight,
+                const std::function<bool(const sim::Unit&)>& isUnitVisibleFunc,
+                sim::Faction viewingFaction,
+                bool debugFogDisabled,
                 int tilePixels = 32);
 
-    // Vẽ các đường đạn đang hoạt động trên chiến trường (M5)
+    // Vẽ các đường đạn đang hoạt động trên chiến trường (lọc theo tầm nhìn sương mù - M6)
     void renderTracers(SDL_Renderer* renderer,
                        const std::vector<sim::Tracer>& tracers,
                        const Camera& camera,
                        int screenWidth,
                        int screenHeight,
+                       const std::function<bool(int, int)>& isTileVisibleFunc,
+                       bool debugFogDisabled,
                        int tilePixels = 32);
 
     // Vẽ khung chữ nhật kéo thả chọn quân

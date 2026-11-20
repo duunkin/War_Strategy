@@ -50,6 +50,14 @@ public:
     void takeDamage(int damage);
     [[nodiscard]] bool isDead() const { return m_hp <= 0 || m_currentUnits <= 0; }
 
+    // Trạng thái lộ diện & tàng hình (M6)
+    [[nodiscard]] int getRevealedTicksRemaining() const { return m_revealedTicksRemaining; }
+    void setRevealedTicks(int t) { m_revealedTicksRemaining = t; }
+    void decrementRevealedTicks() { if (m_revealedTicksRemaining > 0) m_revealedTicksRemaining--; }
+    [[nodiscard]] bool isRevealed() const { return m_revealedTicksRemaining > 0; }
+    [[nodiscard]] int getElevation() const { return m_elevation; }
+    void setElevation(int el) { m_elevation = el; }
+
     // Chỉ số chiến đấu & di chuyển
     [[nodiscard]] int getArmor() const { return m_armor; }
     [[nodiscard]] float getSpeedTilesPerSec() const { return m_speedTilesPerSec; }
@@ -145,6 +153,8 @@ private:
     bool        m_canTargetSea{false};
     float       m_stealthRevealRangeTiles{0.0f};
     int         m_iconSizeTiles{1};
+    int         m_revealedTicksRemaining{0};
+    int         m_elevation{0};
 
     // Waypoints và điều chỉnh đích (M4)
     std::vector<TileCoord> m_waypoints;

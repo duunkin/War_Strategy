@@ -76,6 +76,10 @@ private:
     int      m_boxCurrentX{0};
     int      m_boxCurrentY{0};
     uint32_t m_inspectedUnitId{0};
+
+    // Chế độ Debug phím F2 bật/tắt sương mù (M6)
+    // TODO: [DEBUG ONLY - F2] Xóa chế độ tắt sương mù này khi hoàn thiện game
+    bool     m_debugFogDisabled{false};
 };
 
 } // namespace app

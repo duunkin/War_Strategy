@@ -29,7 +29,9 @@ void GameApp::regenerateMap(uint64_t seed) {
     m_mapGenerator.generate(m_worldMap, m_currentSeed, m_mapConfig);
     m_worldSim.spawnPlayerDivisions(m_currentSeed);
     if (m_window.getSDLRenderer()) {
-        m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap);
+        sim::Faction viewingFaction = m_worldSim.getControlledFaction();
+        m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(viewingFaction), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
+        m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(viewingFaction), m_worldSim.getUnits(), viewingFaction, m_debugFogDisabled);
     }
 }
 
@@ -55,7 +57,7 @@ bool GameApp::init() {
     // 2. Mở cửa sổ 1280x720 có ghi rõ thời gian build ở tiêu đề
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 720;
-    const std::string windowTitle = "War Strategy - Milestone 3a (Build: " __DATE__ " " __TIME__ ")";
+    const std::string windowTitle = "War Strategy - Milestone 6 (Build: " __DATE__ " " __TIME__ ")";
     if (!m_window.init(windowTitle, initialWidth, initialHeight)) {
         std::cerr << "[GameApp] Khoi tao cua so that bai!" << std::endl;
         return false;
@@ -130,27 +132,36 @@ void GameApp::processEvents() {
         if (event.type == SDL_QUIT) {
             m_running = false;
         } else if (event.type == SDL_KEYDOWN) {
-#ifdef WS_DEBUG_INPUT
-            const char* scancodeName = SDL_GetScancodeName(event.key.keysym.scancode);
-            const char* keyName = SDL_GetKeyName(event.key.keysym.sym);
-            SDL_Log("[KEY DOWN] scancode=%d (%s), sym=%d (%s), repeat=%d",
-                    static_cast<int>(event.key.keysym.scancode),
-                    scancodeName ? scancodeName : "Unknown",
-                    static_cast<int>(event.key.keysym.sym),
-                    keyName ? keyName : "Unknown",
-                    static_cast<int>(event.key.repeat));
-            std::fflush(stdout);
-#endif
-
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 m_running = false;
             } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F1) {
                 // TODO: [DEBUG ONLY - F1] Xóa chế độ điều khiển thử nghiệm này khi tích hợp AI
                 m_worldSim.toggleControlledFaction();
+                // Bỏ chọn toàn bộ quân khi đổi phe (M6)
+                for (auto& u : m_worldSim.getUnits()) {
+                    u.setSelected(false);
+                }
+                m_inspectedUnitId = 0;
                 bool isPlayer = (m_worldSim.getControlledFaction() == sim::Faction::Player);
-                m_notificationText = isPlayer ? "[DEBUG F1] Dang dieu khien: PHE XANH (Player)"
-                                              : "[DEBUG F1] Dang dieu khien: PHE DO (Enemy)";
+                m_notificationText = isPlayer ? "[DEBUG F1] Dieu khien & Tam nhin: PHE XANH (Player)"
+                                              : "[DEBUG F1] Dieu khien & Tam nhin: PHE DO (Enemy)";
                 m_notificationTimer = 2.0f;
+                if (m_window.getSDLRenderer()) {
+                    sim::Faction vf = m_worldSim.getControlledFaction();
+                    m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(vf), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
+                    m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(vf), m_worldSim.getUnits(), vf, m_debugFogDisabled);
+                }
+            } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F2) {
+                // TODO: [DEBUG ONLY - F2] Bật/tắt sương mù chiến tranh để debug
+                m_debugFogDisabled = !m_debugFogDisabled;
+                m_notificationText = m_debugFogDisabled ? "[DEBUG F2] Suong mu: TAT (Hien toan ban do)"
+                                                        : "[DEBUG F2] Suong mu: BAT (Theo tam nhin thuc te)";
+                m_notificationTimer = 2.0f;
+                if (m_window.getSDLRenderer()) {
+                    sim::Faction vf = m_worldSim.getControlledFaction();
+                    m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(vf), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
+                    m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(vf), m_worldSim.getUnits(), vf, m_debugFogDisabled);
+                }
             } else if (event.key.repeat == 0 &&
                        (event.key.keysym.scancode == SDL_SCANCODE_R ||
                         event.key.keysym.scancode == SDL_SCANCODE_F5)) {
@@ -163,17 +174,21 @@ void GameApp::processEvents() {
 
                 regenerateMap(newSeed);
 
-                // Hiển thị thông báo trên màn hình trong 2 giây
                 m_notificationText = "Seed moi: " + std::to_string(newSeed);
                 m_notificationTimer = 2.0f;
+            } else {
+                m_camera.handleEvent(event, winW, winH, worldW, worldH);
             }
+        } else if (event.type == SDL_KEYUP) {
+            m_camera.handleEvent(event, winW, winH, worldW, worldH);
+        } else if (event.type == SDL_MOUSEWHEEL) {
+            m_camera.handleEvent(event, winW, winH, worldW, worldH);
         } else if (event.type == SDL_MOUSEBUTTONDOWN) {
             if (event.button.button == SDL_BUTTON_LEFT) {
-                // 1. Kiểm tra bấm vào nút "Tao ban do moi" ở góc trên bên phải
                 SDL_Rect btnRect = getNewMapButtonRect(winW);
-                if (event.button.x >= btnRect.x && event.button.x < btnRect.x + btnRect.w &&
-                    event.button.y >= btnRect.y && event.button.y < btnRect.y + btnRect.h) {
-
+                // 1. Kiểm tra xem người dùng có click vào nút "Tao ban do moi" không
+                if (event.button.x >= btnRect.x && event.button.x <= btnRect.x + btnRect.w &&
+                    event.button.y >= btnRect.y && event.button.y <= btnRect.y + btnRect.h) {
                     uint64_t oldSeed = m_currentSeed;
                     uint64_t newSeed = generateRandomSeed();
                     while (newSeed == oldSeed) {
@@ -185,7 +200,7 @@ void GameApp::processEvents() {
                     m_notificationText = "Seed moi: " + std::to_string(newSeed);
                     m_notificationTimer = 2.0f;
                 }
-                // 2. Kiểm tra xem người dùng có click vào Minimap không
+                // 2. Kiểm tra xem người dùng có click vào Minimap không (M6: chỉ dịch camera, không chọn quân)
                 else if (m_mapRenderer.handleMinimapClick(event.button.x, event.button.y, winW, winH, m_worldMap, m_camera)) {
                     m_isDraggingMinimap = true;
                 }
@@ -198,11 +213,17 @@ void GameApp::processEvents() {
                     m_isBoxSelecting = true;
                 }
             } else if (event.button.button == SDL_BUTTON_RIGHT) {
-                // Click chuột phải: ra lệnh di chuyển cho các chấm của phe đang điều khiển (Player hoặc Enemy qua F1)
-                float worldX = m_camera.screenToWorldX(static_cast<float>(event.button.x));
-                float worldY = m_camera.screenToWorldY(static_cast<float>(event.button.y));
-                int targetTileX = static_cast<int>(worldX) / m_worldMap.getTileSize();
-                int targetTileY = static_cast<int>(worldY) / m_worldMap.getTileSize();
+                // Click chuột phải:
+                // M6: Chuột phải trên minimap ra lệnh di chuyển cho các chấm đang chọn tới điểm tương ứng
+                int targetTileX = 0;
+                int targetTileY = 0;
+                bool fromMinimap = m_mapRenderer.handleMinimapRightClick(event.button.x, event.button.y, winW, winH, m_worldMap, targetTileX, targetTileY);
+                if (!fromMinimap) {
+                    float worldX = m_camera.screenToWorldX(static_cast<float>(event.button.x));
+                    float worldY = m_camera.screenToWorldY(static_cast<float>(event.button.y));
+                    targetTileX = static_cast<int>(worldX) / m_worldMap.getTileSize();
+                    targetTileY = static_cast<int>(worldY) / m_worldMap.getTileSize();
+                }
 
                 if (m_worldMap.isInBounds(targetTileX, targetTileY)) {
                     sim::Faction ctrlFaction = m_worldSim.getControlledFaction();
@@ -236,6 +257,12 @@ void GameApp::processEvents() {
 
                         for (const auto& u : m_worldSim.getUnits()) {
                             if (u.isDead()) continue;
+
+                            // M6: Địch trong sương mù không thể click chọn hoặc xem
+                            if (u.getFaction() != ctrlFaction && !m_debugFogDisabled && !m_worldSim.isUnitVisible(u, ctrlFaction)) {
+                                continue;
+                            }
+
                             float wx = static_cast<float>(u.getPosX()) * pixelScale / 1000.0f;
                             float wy = static_cast<float>(u.getPosY()) * pixelScale / 1000.0f;
                             float sx = m_camera.worldToScreenX(wx);
@@ -278,18 +305,24 @@ void GameApp::processEvents() {
                                 for (auto& u : m_worldSim.getUnits()) {
                                     u.setSelected(false);
                                 }
-                                m_inspectedUnitId = 0;
                             }
+                            m_inspectedUnitId = 0;
                         }
                     }
-                    // B. Kéo thả hình chữ nhật chọn vùng
+                    // B. Kéo thả hình chữ nhật (Box Selection)
                     else {
-                        int minX = std::min(m_boxStartX, m_boxCurrentX);
-                        int maxX = std::max(m_boxStartX, m_boxCurrentX);
-                        int minY = std::min(m_boxStartY, m_boxCurrentY);
-                        int maxY = std::max(m_boxStartY, m_boxCurrentY);
+                        int boxMinX = std::min(m_boxStartX, m_boxCurrentX);
+                        int boxMaxX = std::max(m_boxStartX, m_boxCurrentX);
+                        int boxMinY = std::min(m_boxStartY, m_boxCurrentY);
+                        int boxMaxY = std::max(m_boxStartY, m_boxCurrentY);
 
-                        uint32_t firstSelected = 0;
+                        if (!shiftHeld) {
+                            for (auto& u : m_worldSim.getUnits()) {
+                                u.setSelected(false);
+                            }
+                        }
+
+                        uint32_t lastSelectedId = 0;
                         for (auto& u : m_worldSim.getUnits()) {
                             if (u.isDead() || u.getFaction() != ctrlFaction) continue;
 
@@ -298,21 +331,18 @@ void GameApp::processEvents() {
                             float sx = m_camera.worldToScreenX(wx);
                             float sy = m_camera.worldToScreenY(wy);
 
-                            if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
+                            if (sx >= boxMinX && sx <= boxMaxX && sy >= boxMinY && sy <= boxMaxY) {
                                 u.setSelected(true);
-                                if (firstSelected == 0) firstSelected = u.getId();
-                            } else if (!shiftHeld) {
-                                u.setSelected(false);
+                                lastSelectedId = u.getId();
                             }
                         }
-                        if (firstSelected != 0) {
-                            m_inspectedUnitId = firstSelected;
+                        if (lastSelectedId != 0) {
+                            m_inspectedUnitId = lastSelectedId;
                         }
                     }
                 }
             }
         } else if (event.type == SDL_MOUSEMOTION) {
-            // Khi đang kéo chuột trên Minimap, liên tục cập nhật vị trí camera
             if (m_isDraggingMinimap) {
                 m_mapRenderer.handleMinimapClick(event.motion.x, event.motion.y, winW, winH, m_worldMap, m_camera);
             } else if (m_isBoxSelecting) {
@@ -320,12 +350,6 @@ void GameApp::processEvents() {
                 m_boxCurrentY = event.motion.y;
             }
         }
-
-        // Cập nhật kích thước cửa sổ khi thay đổi
-        m_window.handleEvent(event);
-
-        // Sự kiện chuột (lăn chuột zoom camera)
-        m_camera.handleEvent(event, winW, winH, worldW, worldH);
     }
 }
 
@@ -335,7 +359,7 @@ void GameApp::update(float deltaTime) {
     int worldW = m_worldMap.getWorldWidth();
     int worldH = m_worldMap.getWorldHeight();
 
-    // Giảm dần bộ đếm thời gian hiển thị thông báo
+    // Cập nhật bộ đếm thông báo
     if (m_notificationTimer > 0.0f) {
         m_notificationTimer -= deltaTime;
         if (m_notificationTimer < 0.0f) {
@@ -352,9 +376,18 @@ void GameApp::update(float deltaTime) {
     m_simAccumulator += deltaTime;
     const int tps = m_worldSim.getConfig().getTickRate();
     const float tickInterval = (tps > 0) ? (1.0f / static_cast<float>(tps)) : 0.05f;
+    bool simTicked = false;
     while (m_simAccumulator >= tickInterval) {
         m_simAccumulator -= tickInterval;
         m_worldSim.tick();
+        simTicked = true;
+    }
+
+    // M6: Texture minimap và sương mù chỉ cập nhật theo tick sim để tối ưu hiệu năng
+    if (simTicked && m_window.getSDLRenderer()) {
+        sim::Faction viewingFaction = m_worldSim.getControlledFaction();
+        m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(viewingFaction), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
+        m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(viewingFaction), m_worldSim.getUnits(), viewingFaction, m_debugFogDisabled);
     }
 
     // Tính toán FPS (cập nhật số liệu mỗi 0.25 giây để hiển thị mượt mà)
@@ -371,25 +404,38 @@ void GameApp::render() {
     int winW = m_window.getWidth();
     int winH = m_window.getHeight();
     SDL_Renderer* renderer = m_window.getSDLRenderer();
+    sim::Faction viewingFaction = m_worldSim.getControlledFaction();
 
     // 1. Xóa màn hình với màu xám đen đậm cho khu vực ngoài biên bản đồ
     m_window.clear(14, 16, 20, 255);
 
-    // 2. Vẽ bản đồ thế giới tô màu theo địa hình và Minimap ở góc dưới phải
-    m_mapRenderer.render(renderer, m_worldMap, m_camera, winW, winH);
+    // 2. Vẽ bản đồ thế giới tô màu theo địa hình
+    m_mapRenderer.renderWorldTerrain(renderer, m_worldMap, m_camera, winW, winH);
 
-    // 2b. Vẽ các đơn vị quân đội theo phe và đường đi (M4)
-    m_unitRenderer.render(renderer, m_worldSim.getUnits(), m_camera, winW, winH, m_worldSim.getConfig().getTilePixels());
+    // 2a. Vẽ lớp phủ sương mù chiến tranh 128x96 phóng to có lọc tuyến tính (M6)
+    m_mapRenderer.renderFog(renderer, m_camera, winW, winH, m_worldMap.getWorldWidth(), m_worldMap.getWorldHeight(), m_debugFogDisabled);
 
-    // 2b2. Vẽ các đường đạn đang hoạt động trên chiến trường (M5)
-    m_unitRenderer.renderTracers(renderer, m_worldSim.getActiveTracers(), m_camera, winW, winH, m_worldSim.getConfig().getTilePixels());
+    // 2b. Vẽ các đơn vị quân đội theo phe và đường đi (M6: lọc theo sương mù)
+    auto isUnitVis = [this, viewingFaction](const sim::Unit& u) {
+        return m_worldSim.isUnitVisible(u, viewingFaction);
+    };
+    m_unitRenderer.render(renderer, m_worldSim.getUnits(), m_camera, winW, winH, isUnitVis, viewingFaction, m_debugFogDisabled, m_worldSim.getConfig().getTilePixels());
+
+    // 2b2. Vẽ các đường đạn đang hoạt động trên chiến trường (M6: lọc theo sương mù)
+    auto isTileVis = [this, viewingFaction](int tx, int ty) {
+        return m_worldSim.isTileVisible(tx, ty, viewingFaction);
+    };
+    m_unitRenderer.renderTracers(renderer, m_worldSim.getActiveTracers(), m_camera, winW, winH, isTileVis, m_debugFogDisabled, m_worldSim.getConfig().getTilePixels());
 
     // 2c. Vẽ khung chữ nhật kéo thả chọn quân nếu đang drag
     if (m_isBoxSelecting) {
         m_unitRenderer.renderSelectionBox(renderer, m_boxStartX, m_boxStartY, m_boxCurrentX, m_boxCurrentY);
     }
 
-    // 2d. Vẽ bảng thông tin nhỏ nếu có đơn vị đang chọn hoặc đang xem (M4)
+    // 2c2. Hiển thị MINIMAP ở góc dưới phải màn hình (M6: chỉ cập nhật theo tick sim)
+    m_mapRenderer.renderMinimap(renderer, m_worldMap, m_camera, winW, winH);
+
+    // 2d. Vẽ bảng thông tin nhỏ nếu có đơn vị đang chọn hoặc đang xem (M4/M6: chỉ hiện nếu đang nhìn thấy)
     const sim::Unit* inspected = nullptr;
     if (m_inspectedUnitId != 0) {
         inspected = m_worldSim.getUnitById(m_inspectedUnitId);
@@ -403,12 +449,15 @@ void GameApp::render() {
         }
     }
     if (inspected && !inspected->isDead()) {
-        m_unitRenderer.renderInfoPanel(renderer, *inspected, m_textRenderer, winW, winH);
+        bool canSee = (inspected->getFaction() == viewingFaction) || m_debugFogDisabled || m_worldSim.isUnitVisible(*inspected, viewingFaction);
+        if (canSee) {
+            m_unitRenderer.renderInfoPanel(renderer, *inspected, m_textRenderer, winW, winH);
+        }
     }
 
-    // 3. Hiển thị FPS và thông tin Seed ở góc trên bên trái
+    // 3. Hiển thị FPS và thông tin thời gian cập nhật tầm nhìn Vision ở góc trên bên trái
     char infoBuffer[128];
-    std::snprintf(infoBuffer, sizeof(infoBuffer), "FPS: %.0f", m_currentFPS);
+    std::snprintf(infoBuffer, sizeof(infoBuffer), "FPS: %.0f  |  Vision: %.3f ms", m_currentFPS, m_worldSim.getLastVisionUpdateTimeMs());
     SDL_Color textColor{240, 240, 240, 255};
     m_textRenderer.renderText(renderer, infoBuffer, 16, 16, textColor, true);
 
@@ -417,10 +466,12 @@ void GameApp::render() {
     SDL_Color seedColor{255, 220, 100, 255};
     m_textRenderer.renderText(renderer, seedBuffer, 16, 42, seedColor, true);
 
-    // TODO: [DEBUG ONLY - F1] Xóa chế độ điều khiển thử nghiệm này khi tích hợp AI
-    bool isPlayerCtrl = (m_worldSim.getControlledFaction() == sim::Faction::Player);
-    char f1Buffer[96];
-    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1 DEBUG] Dieu khien: %s", isPlayerCtrl ? "PHE XANH (Player)" : "PHE DO (Enemy)");
+    // TODO: [DEBUG ONLY - F1 & F2]
+    bool isPlayerCtrl = (viewingFaction == sim::Faction::Player);
+    char f1Buffer[128];
+    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s",
+                  isPlayerCtrl ? "PHE XANH (Player)" : "PHE DO (Enemy)",
+                  m_debugFogDisabled ? "TAT (Debug)" : "BAT");
     SDL_Color f1Color = isPlayerCtrl ? SDL_Color{100, 200, 255, 255} : SDL_Color{255, 120, 110, 255};
     m_textRenderer.renderText(renderer, f1Buffer, 16, 68, f1Color, true);
 
@@ -444,7 +495,7 @@ void GameApp::render() {
 
     // 5. Hiển thị thông báo tạm nếu đang trong thời gian timer
     if (m_notificationTimer > 0.0f) {
-        SDL_Rect notifBg{16, 96, 400, 32};
+        SDL_Rect notifBg{16, 96, 420, 32};
         SDL_SetRenderDrawColor(renderer, 20, 60, 30, 220);
         SDL_RenderFillRect(renderer, &notifBg);
         SDL_SetRenderDrawColor(renderer, 60, 220, 100, 255);
@@ -502,7 +553,7 @@ void GameApp::render() {
         m_textRenderer.renderText(renderer, restartHint, dialogX + 120, dialogY + 120, hintColor, false);
     }
 
-    // 6. Hiển thị khung hình lên cửa sổ
+    // 8. Hiển thị khung hình lên cửa sổ
     m_window.present();
 }
 

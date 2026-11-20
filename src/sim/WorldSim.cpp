@@ -1,4 +1,5 @@
 #include "WorldSim.hpp"
+#include "vision/VisionSystem.hpp"
 #include "../mapgen/FastRng.hpp"
 
 #include <iostream>
@@ -8,6 +9,7 @@
 #include <unordered_set>
 #include <limits>
 #include <cmath>
+#include <chrono>
 
 namespace sim {
 
@@ -295,6 +297,12 @@ void WorldSim::spawnDivisions(uint64_t seed) {
 
     std::cout << "[WorldSim] Da sinh thanh cong " << m_units.size() << " don vi ("
               << roster.size() << " Player phia Tay, " << roster.size() << " Enemy phia Dong doi xung) tu seed " << seed << std::endl;
+
+    // Khởi tạo và cập nhật sương mù chiến tranh ban đầu ở tick 0 (M6)
+    size_t mapSize = static_cast<size_t>(m_map.getWidth() * m_map.getHeight());
+    m_fogPlayer.assign(mapSize, static_cast<uint8_t>(FogState::Unexplored));
+    m_fogEnemy.assign(mapSize, static_cast<uint8_t>(FogState::Unexplored));
+    updateVision();
 }
 
 const Unit* WorldSim::getUnitById(uint32_t id) const {
@@ -382,10 +390,20 @@ void WorldSim::tick() {
         }
     }
 
-    // 3. Tự động giao chiến và bắn phá (M5)
+    // Giảm thời gian lộ diện của các đơn vị (M6)
+    for (auto& unit : m_units) {
+        if (!unit.isDead()) {
+            unit.decrementRevealedTicks();
+        }
+    }
+
+    // 3. Cập nhật tầm nhìn và sương mù chiến tranh cho cả hai phe (M6)
+    updateVision();
+
+    // 4. Tự động giao chiến và bắn phá (M5)
     resolveCombat();
 
-    // 4. Quy tắc M3: Chấm hết máu (isDead) thì chấm mất khỏi bản đồ
+    // 5. Quy tắc M3: Chấm hết máu (isDead) thì chấm mất khỏi bản đồ
     m_units.erase(
         std::remove_if(m_units.begin(), m_units.end(), [](const Unit& u) {
             return u.isDead();
@@ -393,13 +411,18 @@ void WorldSim::tick() {
         m_units.end()
     );
 
-    // 5. Kiểm tra điều kiện thắng thua / hết giờ (M5)
+    // 6. Kiểm tra điều kiện thắng thua / hết giờ (M5)
     checkMatchConditions();
 
     m_currentTick++;
 }
 
 void WorldSim::resolveCombat() {
+    // Nếu sương mù chưa từng được tính (ví dụ trong unit test gọi thẳng resolveCombat), cập nhật vision trước
+    if (m_fogPlayer.empty() || m_fogEnemy.empty()) {
+        updateVision();
+    }
+
     // 1. Dọn dẹp các đường đạn cũ (giữ lại các đường đạn trong 3 tick gần nhất)
     m_activeTracers.erase(
         std::remove_if(m_activeTracers.begin(), m_activeTracers.end(), [this](const Tracer& t) {
@@ -438,6 +461,8 @@ void WorldSim::resolveCombat() {
         for (auto& candidate : m_units) {
             if (candidate.isDead()) continue;
             if (!CombatSystem::canAttackTarget(*attacker, candidate)) continue;
+            // M6: Chỉ nhắm mục tiêu đang được phe mình nhìn thấy
+            if (!isUnitVisible(candidate, attacker->getFaction())) continue;
 
             int64_t dx = static_cast<int64_t>(candidate.getPosX()) - attacker->getPosX();
             int64_t dy = static_cast<int64_t>(candidate.getPosY()) - attacker->getPosY();
@@ -491,6 +516,11 @@ void WorldSim::resolveCombat() {
             static_cast<int>(hits)
         );
         bestTarget->takeDamage(static_cast<int>(mainDmg));
+
+        // M6: Tư lệnh lộ diện sau khi nổ súng
+        if (attacker->getType() == UnitType::Commander) {
+            attacker->setRevealedTicks(m_config.getVisionConfig().commanderRevealTicks);
+        }
 
         // Lưu đường đạn để hiển thị
         Tracer tr;
@@ -631,6 +661,48 @@ int WorldSim::getRemainingTimeSec() const {
     if (tps <= 0) tps = 20;
     int elapsedSec = static_cast<int>(m_currentTick / tps);
     return std::max(0, totalSec - elapsedSec);
+}
+
+void WorldSim::initElevationGrid() {
+    int w = m_map.getWidth();
+    int h = m_map.getHeight();
+    m_elevationGrid.resize(static_cast<size_t>(w * h));
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            DetailedTerrainType dt = m_config.classifyTerrain(m_map, x, y);
+            m_elevationGrid[static_cast<size_t>(y * w + x)] = static_cast<uint8_t>(m_config.getTerrainProperty(dt).elevation);
+        }
+    }
+}
+
+void WorldSim::updateVision() {
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    if (m_elevationGrid.empty()) {
+        initElevationGrid();
+    }
+
+    VisionSystem::updateFactionVision(Faction::Player, m_units, m_map, m_config, m_elevationGrid.data(), m_fogPlayer);
+    VisionSystem::updateFactionVision(Faction::Enemy, m_units, m_map, m_config, m_elevationGrid.data(), m_fogEnemy);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    m_lastVisionUpdateTimeMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+bool WorldSim::isTileVisible(int x, int y, Faction f) const {
+    if (!m_map.isInBounds(x, y)) return false;
+    const auto& fog = getFogMap(f);
+    size_t idx = static_cast<size_t>(y * m_map.getWidth() + x);
+    if (idx >= fog.size()) return false;
+    return fog[idx] == static_cast<uint8_t>(FogState::Visible);
+}
+
+bool WorldSim::isUnitVisible(const Unit& u, Faction observerFaction) const {
+    if (m_fogPlayer.empty() || m_fogEnemy.empty()) {
+        const_cast<WorldSim*>(this)->updateVision();
+    }
+    const auto& fog = getFogMap(observerFaction);
+    return VisionSystem::isUnitVisibleToFaction(u, observerFaction, m_units, fog, m_map.getWidth(), m_map.getHeight());
 }
 
 } // namespace sim

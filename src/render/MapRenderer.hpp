@@ -7,37 +7,52 @@
 #endif
 
 #include "sim/map/WorldMap.hpp"
+#include "sim/units/Unit.hpp"
+#include <vector>
+#include <cstdint>
 
 namespace render {
 class Camera;
 
 /**
- * @brief Lớp MapRenderer chịu trách nhiệm vẽ bản đồ thế giới và hệ thống minimap.
- *
- * Tính năng:
- * - Tô màu từng ô theo loại địa hình (Biển, Đất bằng, Đồi, Núi, Rừng, Sông, Hồ).
- * - Frustum culling: chỉ tính toán và vẽ các ô nằm trong khung nhìn camera.
- * - Vẽ đường viền bản đồ thế giới và lưới ô.
- * - Vẽ Minimap ở góc dưới phải màn hình hiển thị toàn bộ địa hình thế giới.
- * - Vẽ khung chữ nhật thể hiện vùng nhìn camera trên Minimap.
- * - Hỗ trợ bấm / kéo chuột trên Minimap để dịch chuyển tức thời vị trí camera.
+ * @brief Lớp MapRenderer chịu trách nhiệm vẽ bản đồ thế giới, sương mù chiến tranh và hệ thống minimap.
  */
 class MapRenderer {
 public:
     MapRenderer();
     ~MapRenderer();
 
-    // Vẽ bản đồ và minimap lên SDL_Renderer
-    void render(SDL_Renderer* renderer, const sim::WorldMap& map, const Camera& camera, int screenWidth, int screenHeight);
+    // Vẽ bề mặt địa hình thế giới và lưới ô
+    void renderWorldTerrain(SDL_Renderer* renderer, const sim::WorldMap& map, const Camera& camera, int screenWidth, int screenHeight);
 
-    // Cập nhật lại bề mặt texture của minimap khi sinh bản đồ mới
-    void updateMinimapTexture(SDL_Renderer* renderer, const sim::WorldMap& map);
+    // Cập nhật texture sương mù 128x96
+    void updateFogTexture(SDL_Renderer* renderer, const std::vector<uint8_t>& fogMap, int mapW, int mapH, bool debugFogDisabled);
+
+    // Vẽ lớp phủ sương mù chiến tranh lên bản đồ thế giới bằng texture 128x96 phóng to có lọc tuyến tính (M6)
+    void renderFog(SDL_Renderer* renderer, const Camera& camera, int screenWidth, int screenHeight, int worldWidth, int worldHeight, bool debugFogDisabled);
+
+    // Cập nhật bề mặt texture của minimap (chỉ cập nhật theo tick sim)
+    void updateMinimapTexture(SDL_Renderer* renderer,
+                              const sim::WorldMap& map,
+                              const std::vector<uint8_t>& fogMap,
+                              const std::vector<sim::Unit>& units,
+                              sim::Faction viewingFaction,
+                              bool debugFogDisabled);
+
+    // Vẽ Minimap ở góc dưới phải màn hình
+    void renderMinimap(SDL_Renderer* renderer, const sim::WorldMap& map, const Camera& camera, int screenWidth, int screenHeight);
 
     // Trả về vùng hình chữ nhật của Minimap trên màn hình
     [[nodiscard]] SDL_Rect getMinimapRect(int screenWidth, int screenHeight) const;
 
-    // Xử lý sự kiện nhấn/kéo chuột trên Minimap; trả về true nếu chuột nằm trong Minimap và đã dịch chuyển camera
+    // Kiểm tra chuột có nằm trong vùng Minimap hay không
+    [[nodiscard]] bool isMouseInsideMinimap(int mouseX, int mouseY, int screenWidth, int screenHeight) const;
+
+    // Xử lý sự kiện nhấn/kéo chuột trái trên Minimap (chỉ dịch chuyển camera)
     bool handleMinimapClick(int mouseX, int mouseY, int screenWidth, int screenHeight, const sim::WorldMap& map, Camera& camera) const;
+
+    // Xử lý click chuột phải trên Minimap (ra lệnh di chuyển tới ô tương ứng)
+    bool handleMinimapRightClick(int mouseX, int mouseY, int screenWidth, int screenHeight, const sim::WorldMap& map, int& outTileX, int& outTileY) const;
 
     // Giải phóng tài nguyên texture
     void cleanup();
@@ -47,12 +62,13 @@ public:
 
 private:
     SDL_Texture* m_minimapTexture{nullptr};
-    uint64_t     m_lastMapHash{0}; // Dùng để tự động cập nhật minimap nếu bản đồ đổi
+    SDL_Texture* m_fogTexture{nullptr};
+    uint64_t     m_lastMapHash{0};
 
-    // Kích thước minimap hiển thị ở góc dưới phải (tỉ lệ 4:3 khớp 128x96)
-    int m_minimapWidth{256};  // 128 ô * 2 pixel
-    int m_minimapHeight{192}; // 96 ô * 2 pixel
-    int m_minimapMargin{16};  // Cách lề phải và lề dưới
+    // Kích thước minimap hiển thị ở góc dưới phải (tỉ lệ 4:3 khớp 128x96, mỗi ô 2x2 px)
+    int m_minimapWidth{256};
+    int m_minimapHeight{192};
+    int m_minimapMargin{16};
 
     // Màu đường kẻ lưới ô và viền
     SDL_Color m_gridColor{40, 44, 52, 160};

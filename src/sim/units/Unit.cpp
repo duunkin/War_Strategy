@@ -40,6 +40,8 @@ Unit::Unit(uint32_t id, Faction faction, UnitType type, int32_t posX, int32_t po
     , m_canTargetSea(config.canTargetSea)
     , m_stealthRevealRangeTiles(config.stealthRevealRangeTiles)
     , m_iconSizeTiles(config.iconSizeTiles)
+    , m_revealedTicksRemaining(0)
+    , m_elevation(config.elevation)
 {}
 
 void Unit::takeDamage(int damage) {

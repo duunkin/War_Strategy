@@ -102,6 +102,11 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
     m_scale.tilePixels = jScale.value("tilePixels", 32);
     m_scale.tickRate = jScale.value("tickRate", 20);
     m_matchDurationSec = root.value("matchDurationSec", 3600);
+    if (root.contains("vision") && root["vision"].is_object()) {
+        const auto& jVision = root["vision"];
+        m_visionConfig.airElevation = jVision.value("airElevation", 4);
+        m_visionConfig.commanderRevealTicks = jVision.value("commanderRevealTicks", 40);
+    }
     if (jScale.contains("mapTiles") && jScale["mapTiles"].is_array() && jScale["mapTiles"].size() >= 2) {
         m_scale.mapWidth = jScale["mapTiles"][0].get<int>();
         m_scale.mapHeight = jScale["mapTiles"][1].get<int>();
@@ -139,6 +144,7 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
         prop.defBonus = tObj.value("defBonus", 0.0f);
         prop.visionMod = tObj.value("visionMod", 0);
         prop.rangeMod = tObj.value("rangeMod", 0);
+        prop.elevation = tObj.value("elevation", 0);
         prop.ambush = tObj.value("ambush", false);
 
         if (tObj.contains("speed") && tObj["speed"].is_object()) {
@@ -189,6 +195,7 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
         cfg.canTargetSea = uObj.value("canTargetSea", false);
         cfg.stealthRevealRangeTiles = uObj.value("stealthRevealRangeTiles", 0.0f);
         cfg.iconSizeTiles = uObj.value("iconSizeTiles", 1);
+        cfg.elevation = uObj.value("elevation", (cfg.domain == UnitDomain::Air ? 4 : 0));
 
         if (uObj.contains("weapons") && uObj["weapons"].is_array()) {
             for (const auto& w : uObj["weapons"]) {

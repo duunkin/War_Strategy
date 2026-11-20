@@ -8,11 +8,14 @@
 namespace render {
 
 void UnitRenderer::render(SDL_Renderer* renderer,
-                         const std::vector<sim::Unit>& units,
-                         const Camera& camera,
-                         int screenWidth,
-                         int screenHeight,
-                         int tilePixels) {
+                          const std::vector<sim::Unit>& units,
+                          const Camera& camera,
+                          int screenWidth,
+                          int screenHeight,
+                          const std::function<bool(const sim::Unit&)>& isUnitVisibleFunc,
+                          sim::Faction viewingFaction,
+                          bool debugFogDisabled,
+                          int tilePixels) {
     if (!renderer) return;
 
     float zoom = camera.getZoom();
@@ -25,6 +28,11 @@ void UnitRenderer::render(SDL_Renderer* renderer,
 
     for (const auto& unit : units) {
         if (unit.isDead() || !unit.isSelected() || !unit.hasPath()) {
+            continue;
+        }
+
+        // Chỉ vẽ đường đi của quân phe đang xem (hoặc debug)
+        if (unit.getFaction() != viewingFaction && !debugFogDisabled) {
             continue;
         }
 
@@ -69,7 +77,7 @@ void UnitRenderer::render(SDL_Renderer* renderer,
             SDL_RenderDrawLine(renderer, destScreenX - 6, destScreenY, destScreenX, destScreenY - 6);
             SDL_RenderDrawLine(renderer, destScreenX, destScreenY - 6, destScreenX + 6, destScreenY);
             SDL_RenderDrawLine(renderer, destScreenX + 6, destScreenY, destScreenX, destScreenY + 6);
-            SDL_RenderDrawLine(renderer, destScreenX, destScreenY + 6, destScreenX - 6, destScreenY);
+            SDL_RenderDrawLine(renderer, destScreenX + 6, destScreenY + 6, destScreenX - 6, destScreenY);
 
             SDL_Rect innerDot{destScreenX - 2, destScreenY - 2, 5, 5};
             SDL_RenderFillRect(renderer, &innerDot);
@@ -88,6 +96,13 @@ void UnitRenderer::render(SDL_Renderer* renderer,
     // =========================================================================
     for (const auto& unit : units) {
         if (unit.isDead()) continue;
+
+        // M6: Lọc theo sương mù chiến tranh - Chấm địch trong Explored hoặc Unexplored không vẽ!
+        if (unit.getFaction() != viewingFaction && !debugFogDisabled) {
+            if (isUnitVisibleFunc && !isUnitVisibleFunc(unit)) {
+                continue;
+            }
+        }
 
         // Chuyển đổi mili-ô sang pixel thế giới: 1 ô = 1000 mili-ô = tilePixels (32 px)
         float worldX = static_cast<float>(unit.getPosX()) * pixelScale / 1000.0f;
@@ -160,36 +175,101 @@ void UnitRenderer::render(SDL_Renderer* renderer,
         int barH = std::max(3, static_cast<int>(baseSize * 0.20f));
         int barW = rsize;
         int barX = rx;
-        int barY = ry - barH - 3;
+        int barY = ry - barH - 4;
 
-        SDL_Rect barBg{barX, barY, barW, barH};
-        SDL_SetRenderDrawColor(renderer, 15, 15, 20, 220);
-        SDL_RenderFillRect(renderer, &barBg);
+        // Nền thanh máu màu xám đen
+        SDL_Rect hpBgRect{barX, barY, barW, barH};
+        SDL_SetRenderDrawColor(renderer, 20, 24, 30, 220);
+        SDL_RenderFillRect(renderer, &hpBgRect);
+        SDL_SetRenderDrawColor(renderer, 60, 65, 75, 255);
+        SDL_RenderDrawRect(renderer, &hpBgRect);
 
-        float hpRatio = 0.0f;
-        if (unit.getMaxHp() > 0) {
-            hpRatio = static_cast<float>(unit.getHp()) / static_cast<float>(unit.getMaxHp());
-            hpRatio = std::clamp(hpRatio, 0.0f, 1.0f);
-        }
-        int fillW = static_cast<int>(static_cast<float>(barW) * hpRatio);
+        // Phần máu hiện tại theo tỉ lệ hp / maxHp
+        float hpRatio = (unit.getMaxHp() > 0) ? (static_cast<float>(unit.getHp()) / static_cast<float>(unit.getMaxHp())) : 0.0f;
+        hpRatio = std::clamp(hpRatio, 0.0f, 1.0f);
+        int fillW = static_cast<int>(std::round(static_cast<float>(barW - 2) * hpRatio));
+
         if (fillW > 0) {
-            SDL_Rect barFill{barX, barY, fillW, barH};
-            if (unit.getFaction() == sim::Faction::Player) {
-                if (hpRatio > 0.5f) {
-                    SDL_SetRenderDrawColor(renderer, 50, 225, 90, 255); // Xanh lá
-                } else if (hpRatio > 0.25f) {
-                    SDL_SetRenderDrawColor(renderer, 240, 210, 40, 255); // Vàng
-                } else {
-                    SDL_SetRenderDrawColor(renderer, 240, 50, 40, 255);  // Đỏ
-                }
+            SDL_Rect hpFillRect{barX + 1, barY + 1, fillW, barH - 2};
+            if (hpRatio > 0.5f) {
+                SDL_SetRenderDrawColor(renderer, 45, 215, 80, 255); // Xanh lá
+            } else if (hpRatio > 0.25f) {
+                SDL_SetRenderDrawColor(renderer, 245, 195, 35, 255); // Vàng
             } else {
-                SDL_SetRenderDrawColor(renderer, 255, 75, 65, 255); // Đỏ tươi
+                SDL_SetRenderDrawColor(renderer, 235, 50, 40, 255);  // Đỏ
             }
-            SDL_RenderFillRect(renderer, &barFill);
+            SDL_RenderFillRect(renderer, &hpFillRect);
+        }
+    }
+}
+
+void UnitRenderer::renderTracers(SDL_Renderer* renderer,
+                                 const std::vector<sim::Tracer>& tracers,
+                                 const Camera& camera,
+                                 int screenWidth,
+                                 int screenHeight,
+                                 const std::function<bool(int, int)>& isTileVisibleFunc,
+                                 bool debugFogDisabled,
+                                 int tilePixels) {
+    if (!renderer || tracers.empty()) return;
+
+    float pixelScale = static_cast<float>(tilePixels);
+
+    for (const auto& t : tracers) {
+        int startTx = t.startPosX / 1000;
+        int startTy = t.startPosY / 1000;
+        int endTx = t.endPosX / 1000;
+        int endTy = t.endPosY / 1000;
+
+        bool startVis = debugFogDisabled || (isTileVisibleFunc && isTileVisibleFunc(startTx, startTy));
+        bool endVis = debugFogDisabled || (isTileVisibleFunc && isTileVisibleFunc(endTx, endTy));
+
+        // M6: Đường đạn chỉ hiển thị khi bên bắn hoặc mục tiêu đang được phe đang xem nhìn thấy
+        if (!startVis && !endVis) {
+            continue;
         }
 
-        SDL_SetRenderDrawColor(renderer, 20, 20, 30, 255);
-        SDL_RenderDrawRect(renderer, &barBg);
+        float startWx = static_cast<float>(t.startPosX) * pixelScale / 1000.0f;
+        float startWy = static_cast<float>(t.startPosY) * pixelScale / 1000.0f;
+        float endWx = static_cast<float>(t.endPosX) * pixelScale / 1000.0f;
+        float endWy = static_cast<float>(t.endPosY) * pixelScale / 1000.0f;
+
+        float sx1 = camera.worldToScreenX(startWx);
+        float sy1 = camera.worldToScreenY(startWy);
+        float sx2 = camera.worldToScreenX(endWx);
+        float sy2 = camera.worldToScreenY(endWy);
+
+        float minX = std::min(sx1, sx2);
+        float maxX = std::max(sx1, sx2);
+        float minY = std::min(sy1, sy2);
+        float maxY = std::max(sy1, sy2);
+        if (maxX < 0 || minX > screenWidth || maxY < 0 || minY > screenHeight) {
+            continue;
+        }
+
+        int x1 = static_cast<int>(sx1);
+        int y1 = static_cast<int>(sy1);
+        int x2 = static_cast<int>(sx2);
+        int y2 = static_cast<int>(sy2);
+
+        if (t.ammoType == "HE") {
+            SDL_SetRenderDrawColor(renderer, 255, 140, 30, 240);
+            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+            SDL_SetRenderDrawColor(renderer, 255, 230, 100, 255);
+            SDL_RenderDrawLine(renderer, x1 + 1, y1, x2 + 1, y2);
+        } else {
+            SDL_SetRenderDrawColor(renderer, 255, 245, 140, 240);
+            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 220, 255);
+            SDL_RenderDrawLine(renderer, x1, y1 + 1, x2, y2 + 1);
+        }
+
+        // M6: Điểm nổ (impact dot) chỉ hiển thị khi mục tiêu nằm trong tầm nhìn
+        if (endVis) {
+            SDL_Rect impactDot{x2 - 2, y2 - 2, 5, 5};
+            SDL_SetRenderDrawColor(renderer, 255, 255, 200, 255);
+            SDL_RenderFillRect(renderer, &impactDot);
+        }
     }
 }
 
@@ -261,58 +341,6 @@ void UnitRenderer::renderInfoPanel(SDL_Renderer* renderer,
     std::snprintf(line3, sizeof(line3), "Toc do: %.2f o/s  |  Giap: %d", unit.getSpeedTilesPerSec(), unit.getArmor());
     SDL_Color cyanColor{130, 225, 255, 255};
     textRenderer.renderText(renderer, line3, panelX + 12, panelY + 82, cyanColor, false);
-}
-
-void UnitRenderer::renderTracers(SDL_Renderer* renderer,
-                                 const std::vector<sim::Tracer>& tracers,
-                                 const Camera& camera,
-                                 int screenWidth,
-                                 int screenHeight,
-                                 int tilePixels) {
-    if (!renderer || tracers.empty()) return;
-
-    float pixelScale = static_cast<float>(tilePixels);
-
-    for (const auto& t : tracers) {
-        float startWx = static_cast<float>(t.startPosX) * pixelScale / 1000.0f;
-        float startWy = static_cast<float>(t.startPosY) * pixelScale / 1000.0f;
-        float endWx = static_cast<float>(t.endPosX) * pixelScale / 1000.0f;
-        float endWy = static_cast<float>(t.endPosY) * pixelScale / 1000.0f;
-
-        float sx1 = camera.worldToScreenX(startWx);
-        float sy1 = camera.worldToScreenY(startWy);
-        float sx2 = camera.worldToScreenX(endWx);
-        float sy2 = camera.worldToScreenY(endWy);
-
-        float minX = std::min(sx1, sx2);
-        float maxX = std::max(sx1, sx2);
-        float minY = std::min(sy1, sy2);
-        float maxY = std::max(sy1, sy2);
-        if (maxX < 0 || minX > screenWidth || maxY < 0 || minY > screenHeight) {
-            continue;
-        }
-
-        int x1 = static_cast<int>(sx1);
-        int y1 = static_cast<int>(sy1);
-        int x2 = static_cast<int>(sx2);
-        int y2 = static_cast<int>(sy2);
-
-        if (t.ammoType == "HE") {
-            SDL_SetRenderDrawColor(renderer, 255, 140, 30, 240);
-            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
-            SDL_SetRenderDrawColor(renderer, 255, 230, 100, 255);
-            SDL_RenderDrawLine(renderer, x1 + 1, y1, x2 + 1, y2);
-        } else {
-            SDL_SetRenderDrawColor(renderer, 255, 245, 140, 240);
-            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
-            SDL_SetRenderDrawColor(renderer, 255, 255, 220, 255);
-            SDL_RenderDrawLine(renderer, x1, y1 + 1, x2, y2 + 1);
-        }
-
-        SDL_Rect impactDot{x2 - 2, y2 - 2, 5, 5};
-        SDL_SetRenderDrawColor(renderer, 255, 255, 200, 255);
-        SDL_RenderFillRect(renderer, &impactDot);
-    }
 }
 
 } // namespace render

@@ -17,6 +17,10 @@
     "dotsPerSide": 30
   },
   "matchDurationSec": 3600,
+  "vision": {
+    "airElevation": 4,
+    "commanderRevealTicks": 40
+  },
   "combatModel": {
     "dotHp": "N_alive x hpPerUnit; N_alive = ceil(hpDot / hpPerUnit)",
     "dotVolley": "mỗi lần bắn: N_alive phát, mỗi phát dmg x rounds x accuracy (sau khi qua giáp)",
@@ -47,6 +51,7 @@
     "DEEP_SEA": {
       "id": 0,
       "name": "Biển sâu",
+      "elevation": 0,
       "speed": {
         "infantry": 0,
         "vehicle": 0,
@@ -61,6 +66,7 @@
     "COASTAL_SEA": {
       "id": 1,
       "name": "Biển ven bờ",
+      "elevation": 0,
       "speed": {
         "infantry": 0,
         "vehicle": 0,
@@ -75,6 +81,7 @@
     "PLAIN": {
       "id": 2,
       "name": "Đồng bằng",
+      "elevation": 0,
       "speed": {
         "infantry": 1.0,
         "vehicle": 1.0,
@@ -89,6 +96,7 @@
     "FOREST": {
       "id": 3,
       "name": "Rừng rậm",
+      "elevation": 1,
       "speed": {
         "infantry": 0.9,
         "vehicle": 0.65,
@@ -103,6 +111,7 @@
     "HILL": {
       "id": 4,
       "name": "Đồi cao",
+      "elevation": 2,
       "speed": {
         "infantry": 0.8,
         "vehicle": 0.7,
@@ -117,6 +126,7 @@
     "MOUNTAIN": {
       "id": 5,
       "name": "Núi hiểm trở",
+      "elevation": 3,
       "speed": {
         "infantry": 0.5,
         "vehicle": 0,
@@ -131,6 +141,7 @@
     "RIVER": {
       "id": 6,
       "name": "Sông / Hồ",
+      "elevation": 0,
       "speed": {
         "infantry": 0.45,
         "vehicle": 0,
@@ -145,6 +156,7 @@
     "FORD": {
       "id": 7,
       "name": "Bến cạn",
+      "elevation": 0,
       "speed": {
         "infantry": 0.7,
         "vehicle": 0.55,
@@ -342,6 +354,7 @@
     "SU57": {
       "name": "Su-57",
       "domain": "AIR",
+      "elevation": 4,
       "unitsPerDot": 25,
       "dotsPerSide": 2,
       "totalPerSide": 50,
@@ -366,6 +379,7 @@
     "B2_SPIRIT": {
       "name": "B-2 Spirit",
       "domain": "AIR",
+      "elevation": 4,
       "unitsPerDot": 10,
       "dotsPerSide": 1,
       "totalPerSide": 10,
