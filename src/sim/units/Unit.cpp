@@ -1,4 +1,4 @@
-#include "Unit.hpp"
+#include "sim/units/Unit.hpp"
 #include <cstdlib>
 
 namespace sim {
@@ -15,8 +15,44 @@ static uint64_t integerSqrt64(uint64_t n) {
     return x0;
 }
 
-Unit::Unit(uint32_t id, Faction faction, UnitType type, int32_t posX, int32_t posY, int manpower)
-    : m_id(id), m_faction(faction), m_type(type), m_posX(posX), m_posY(posY), m_manpower(manpower) {}
+Unit::Unit(uint32_t id, Faction faction, UnitType type, int32_t posX, int32_t posY, const UnitTypeConfig& config)
+    : m_id(id)
+    , m_faction(faction)
+    , m_type(type)
+    , m_domain(config.domain)
+    , m_name(config.name)
+    , m_posX(posX)
+    , m_posY(posY)
+    , m_hpPerUnit(config.hpPerUnit > 0 ? config.hpPerUnit : 100)
+    , m_maxUnits(config.unitsPerDot > 0 ? config.unitsPerDot : 1)
+    , m_currentUnits(m_maxUnits)
+    , m_hp(m_maxUnits * m_hpPerUnit)
+    , m_maxHp(m_hp)
+    , m_armor(config.armor)
+    , m_speedTilesPerSec(config.speedTilesPerSec)
+    , m_speedMilliPerSec(config.speedMilliPerSec)
+    , m_rangeTiles(config.rangeTiles)
+    , m_visionTiles(config.visionTiles)
+    , m_cooldownTicks(config.cooldownTicks)
+    , m_weapons(config.weapons)
+    , m_canTargetAir(config.canTargetAir)
+    , m_canTargetGround(config.canTargetGround)
+    , m_canTargetSea(config.canTargetSea)
+    , m_stealthRevealRangeTiles(config.stealthRevealRangeTiles)
+    , m_iconSizeTiles(config.iconSizeTiles)
+{}
+
+void Unit::takeDamage(int damage) {
+    if (damage <= 0) return;
+    if (damage >= m_hp) {
+        m_hp = 0;
+        m_currentUnits = 0;
+    } else {
+        m_hp -= damage;
+        // Quy tắc: N_alive = ceil(hp / hpPerUnit) = (hp + hpPerUnit - 1) / hpPerUnit
+        m_currentUnits = (m_hp + m_hpPerUnit - 1) / m_hpPerUnit;
+    }
+}
 
 void Unit::setPositionMilli(int32_t x, int32_t y) {
     m_posX = x;

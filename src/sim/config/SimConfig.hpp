@@ -3,77 +3,158 @@
 #include "../map/WorldMap.hpp"
 #include <cstdint>
 #include <string>
+#include <vector>
+#include <unordered_map>
 
 namespace sim {
 
 /**
- * @brief Cấu hình quy tắc trò chơi (đọc từ data/rules.json)
+ * @brief Miền hoạt động của đơn vị
  */
-struct RulesConfig {
-    int metersPerTile{100};   // Chiều dài mỗi ô tính bằng mét
-    int tickPerSecond{20};    // Số tick mô phỏng mỗi giây thực
-    int timeScale{10};        // Tỉ lệ thời gian (1s thực = timeScale s game)
+enum class UnitDomain : uint8_t {
+    Land = 0,
+    Air = 1,
+    Sea = 2
 };
 
 /**
- * @brief Hệ số tốc độ bộ binh theo loại địa hình (đọc từ data/terrain.json)
- * Giá trị là số nguyên phần trăm (ví dụ: đất bằng 100, rừng 60, biển 0 = không đi được)
+ * @brief Phân loại địa hình chi tiết theo JSON (8 loại)
  */
-struct TerrainConfig {
-    int plainMultiplier{100};
-    int forestMultiplier{60};
-    int hillMultiplier{50};
-    int mountainMultiplier{25};
-    int riverMultiplier{20};
-    int seaMultiplier{0};
-    int lakeMultiplier{0};
-
-    [[nodiscard]] int getMultiplier(TerrainType type) const;
-    [[nodiscard]] bool isPassable(TerrainType type) const;
+enum class DetailedTerrainType : uint8_t {
+    DeepSea = 0,    // DEEP_SEA
+    CoastalSea = 1, // COASTAL_SEA
+    Plain = 2,      // PLAIN
+    Forest = 3,     // FOREST
+    Hill = 4,       // HILL
+    Mountain = 5,   // MOUNTAIN
+    River = 6,      // RIVER
+    Ford = 7        // FORD (Bến cạn)
 };
 
 /**
- * @brief Chỉ số đơn vị bộ binh (đọc từ data/units.json)
+ * @brief Chủng loại đơn vị (11 loại trong game_config.json)
+ */
+enum class UnitType : uint8_t {
+    Commander = 0,
+    Infantry = 1,
+    Leopard2A = 2,
+    T14Armata = 3,
+    Puma = 4,
+    Caesar = 5,
+    Gepard = 6,
+    Su57 = 7,
+    B2Spirit = 8,
+    Mogami = 9,
+    Asagiri = 10,
+    Count = 11
+};
+
+/**
+ * @brief Cấu hình vũ khí của một loại đơn vị
+ */
+struct WeaponConfig {
+    std::string ammo{"AP"};
+    int dmg{0};
+    float splash{0.0f};
+    int rounds{1};
+    float accuracy{1.0f};
+    bool smallArms{false};
+};
+
+/**
+ * @brief Cấu hình chỉ số của từng loại đơn vị nạp từ JSON
  */
 struct UnitTypeConfig {
-    int speedKmh{5};      // Tốc độ di chuyển cơ sở (km/h)
-    int manpower{3000};   // Số quân của một sư đoàn
-    int hp{1000};         // Máu
-    int attack{0};        // Sát thương
-    int armor{0};         // Giáp
-    int range{0};         // Tầm bắn
+    std::string key;
+    std::string name;
+    UnitDomain domain{UnitDomain::Land};
+    int unitsPerDot{1};
+    int dotsPerSide{1};
+    int totalPerSide{1};
+    int hpPerUnit{100};
+    int armor{0};
+    float speedTilesPerSec{1.0f};
+    int speedMilliPerSec{1000};
+    float rangeTiles{1.0f};
+    int visionTiles{7};
+    int cooldownTicks{20};
+    std::vector<WeaponConfig> weapons;
+    bool canTargetAir{false};
+    bool canTargetGround{true};
+    bool canTargetSea{false};
+    float stealthRevealRangeTiles{0.0f};
+    int iconSizeTiles{1};
 };
 
 /**
- * @brief Quản lý cấu hình toàn bộ hệ thống mô phỏng sim
+ * @brief Hệ số tốc độ và đặc tính địa hình từ JSON
+ */
+struct TerrainProperty {
+    std::string name;
+    float speedInfantry{0.0f};
+    float speedVehicle{0.0f};
+    float speedShip{0.0f};
+    float speedAir{1.0f};
+    float defBonus{0.0f};
+    int visionMod{0};
+    int rangeMod{0};
+    bool ambush{false};
+};
+
+/**
+ * @brief Quy chuẩn tỉ lệ thế giới từ JSON
+ */
+struct ScaleConfig {
+    int tileMeters{50};      // 1 ô = 50 m
+    int tilePixels{32};      // 1 ô = 32 pixel
+    int mapWidth{128};       // Bản đồ 128 ô ngang
+    int mapHeight{96};       // Bản đồ 96 ô dọc
+    int tickRate{20};        // 20 tick / giây
+};
+
+/**
+ * @brief Lớp quản lý cấu hình game đọc duy nhất từ data/game_config.json
  */
 class SimConfig {
 public:
     SimConfig();
     ~SimConfig() = default;
 
-    // Tự động tìm và đọc cấu hình từ thư mục data/ (thử lần lượt data/, ../data/, ../../data/)
+    // Tự động tìm và đọc cấu hình từ data/game_config.json
     bool autoLoad();
 
-    // Đọc cấu hình từ thư mục cụ thể
-    bool loadFromDirectory(const std::string& dirPath);
+    // Đọc cấu hình từ đường dẫn thư mục hoặc file cụ thể
+    bool loadFromFile(const std::string& filePath);
 
-    // Tính toán quãng đường di chuyển (mili-ô) cho một tick theo địa hình và bộ tích lũy
-    // Trả về số mili-ô di chuyển trong tick này và cập nhật accumulator
-    // Công thức chi tiết được ghi trong phần hiện thực SimConfig.cpp
-    [[nodiscard]] int calculateStepMilli(TerrainType terrain, int& accumulator) const;
+    // Ánh xạ địa hình từ WorldMap (M2) sang DetailedTerrainType (JSON)
+    // Sea: cách đất liền >= 3 ô là DEEP_SEA, còn lại COASTAL_SEA
+    // Lake: COASTAL_SEA
+    // Plain, Forest, Hill, Mountain, River: ánh xạ trực tiếp
+    [[nodiscard]] DetailedTerrainType classifyTerrain(const WorldMap& map, int tileX, int tileY) const;
 
-    // Tính tổng quãng đường di chuyển lý thuyết (mili-ô) sau số lượng ticks cụ thể
-    [[nodiscard]] int64_t calculateDistanceMilli(int ticks, TerrainType terrain) const;
+    // Lấy hệ số tốc độ (phần trăm 0..100) theo loại địa hình chi tiết, domain và UnitType
+    [[nodiscard]] int getSpeedMultiplierPercent(DetailedTerrainType terrain, UnitDomain domain, UnitType type) const;
 
-    [[nodiscard]] const RulesConfig& getRules() const { return m_rules; }
-    [[nodiscard]] const TerrainConfig& getTerrain() const { return m_terrain; }
-    [[nodiscard]] const UnitTypeConfig& getInfantry() const { return m_infantry; }
+    // Kiểm tra đơn vị có thể di chuyển trên địa hình hay không
+    [[nodiscard]] bool isPassable(DetailedTerrainType terrain, UnitDomain domain, UnitType type) const;
+
+    // Tính bước di chuyển (mili-ô) trong 1 tick dùng accumulator
+    [[nodiscard]] int calculateStepMilli(DetailedTerrainType terrain, UnitType type, int& accumulator) const;
+
+    [[nodiscard]] const ScaleConfig& getScale() const { return m_scale; }
+    [[nodiscard]] const std::vector<UnitTypeConfig>& getAllUnitConfigs() const { return m_unitConfigs; }
+    [[nodiscard]] const UnitTypeConfig* getUnitConfig(UnitType type) const;
+    [[nodiscard]] const UnitTypeConfig* getUnitConfigByKey(const std::string& key) const;
+    [[nodiscard]] const TerrainProperty& getTerrainProperty(DetailedTerrainType type) const;
+
+    [[nodiscard]] int getTickRate() const { return m_scale.tickRate; }
+    [[nodiscard]] int getTilePixels() const { return m_scale.tilePixels; }
+    [[nodiscard]] int getTileMeters() const { return m_scale.tileMeters; }
 
 private:
-    RulesConfig    m_rules;
-    TerrainConfig  m_terrain;
-    UnitTypeConfig m_infantry;
+    ScaleConfig m_scale;
+    std::vector<TerrainProperty> m_terrains; // 8 loại theo id 0..7
+    std::vector<UnitTypeConfig>  m_unitConfigs;
 };
 
 } // namespace sim

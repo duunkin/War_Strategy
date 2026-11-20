@@ -1,6 +1,9 @@
 #pragma once
 
+#include "../config/SimConfig.hpp"
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace sim {
 
@@ -9,35 +12,60 @@ namespace sim {
  */
 enum class Faction : uint8_t {
     Neutral = 0,
-    Player = 1,  // Phe người chơi
-    Enemy = 2    // Phe đối phương
+    Player = 1,  // Phe người chơi (Xanh)
+    Enemy = 2    // Phe đối phương (Đỏ)
 };
 
 /**
- * @brief Chủng loại đơn vị
- */
-enum class UnitType : uint8_t {
-    InfantryDivision = 1 // Sư đoàn bộ binh
-};
-
-/**
- * @brief Struct/Class Unit đại diện cho một sư đoàn quân đội trên bản đồ.
+ * @brief Lớp Unit đại diện cho một chấm / khối quân trên bản đồ.
  *
- * Lưu ý quan trọng:
- * - Module sim không dùng float, không include SDL.
- * - Tọa độ vị trí (posX, posY) và đích đến (destX, destY) tính bằng mili-ô (1 ô = 1000 đơn vị).
+ * Theo quy tắc chuẩn:
+ * - 1 chấm là một khối quân chung.
+ * - Máu chấm = số đơn vị x máu mỗi đơn vị (hpPerUnit).
+ * - Sát thương tăng theo quân số, thương vong giảm số đơn vị (N_alive = ceil(hp / hpPerUnit)).
+ * - Khi máu về 0 (hoặc số đơn vị về 0) thì chấm mất (chết).
+ * - Tọa độ vị trí tính bằng mili-ô (1 ô = 1000 mili-ô).
  */
 class Unit {
 public:
     Unit() = default;
-    Unit(uint32_t id, Faction faction, UnitType type, int32_t posX, int32_t posY, int manpower = 3000);
+    Unit(uint32_t id, Faction faction, UnitType type, int32_t posX, int32_t posY, const UnitTypeConfig& config);
     ~Unit() = default;
 
-    // Lấy thông tin cơ bản
+    // Định danh & phân loại
     [[nodiscard]] uint32_t getId() const { return m_id; }
     [[nodiscard]] Faction getFaction() const { return m_faction; }
     [[nodiscard]] UnitType getType() const { return m_type; }
-    [[nodiscard]] int getManpower() const { return m_manpower; }
+    [[nodiscard]] UnitDomain getDomain() const { return m_domain; }
+    [[nodiscard]] const std::string& getName() const { return m_name; }
+
+    // Quân số & Máu
+    [[nodiscard]] int getHp() const { return m_hp; }
+    [[nodiscard]] int getMaxHp() const { return m_maxHp; }
+    [[nodiscard]] int getCurrentUnits() const { return m_currentUnits; }
+    [[nodiscard]] int getMaxUnits() const { return m_maxUnits; }
+    [[nodiscard]] int getHpPerUnit() const { return m_hpPerUnit; }
+    [[nodiscard]] int getManpower() const { return m_currentUnits; } // Tương thích ngược
+
+    // Trừ máu khi chịu sát thương và cập nhật số đơn vị
+    void takeDamage(int damage);
+    [[nodiscard]] bool isDead() const { return m_hp <= 0 || m_currentUnits <= 0; }
+
+    // Chỉ số chiến đấu & di chuyển
+    [[nodiscard]] int getArmor() const { return m_armor; }
+    [[nodiscard]] float getSpeedTilesPerSec() const { return m_speedTilesPerSec; }
+    [[nodiscard]] int getSpeedMilliPerSec() const { return m_speedMilliPerSec; }
+    [[nodiscard]] float getRangeTiles() const { return m_rangeTiles; }
+    [[nodiscard]] int getVisionTiles() const { return m_visionTiles; }
+    [[nodiscard]] int getCooldownTicks() const { return m_cooldownTicks; }
+    [[nodiscard]] const std::vector<WeaponConfig>& getWeapons() const { return m_weapons; }
+
+    // Khả năng nhắm mục tiêu & hiển thị
+    [[nodiscard]] bool canTargetAir() const { return m_canTargetAir; }
+    [[nodiscard]] bool canTargetGround() const { return m_canTargetGround; }
+    [[nodiscard]] bool canTargetSea() const { return m_canTargetSea; }
+    [[nodiscard]] float getStealthRevealRangeTiles() const { return m_stealthRevealRangeTiles; }
+    [[nodiscard]] int getIconSizeTiles() const { return m_iconSizeTiles; }
 
     // Vị trí tính bằng mili-ô
     [[nodiscard]] int32_t getPosX() const { return m_posX; }
@@ -60,7 +88,7 @@ public:
     // Di chuyển thẳng về phía đích một đoạn stepMilli (thuần số nguyên)
     void stepTowardsDestination(int stepMilli);
 
-    // Bộ tích lũy quãng đường sub-milli để bảo toàn độ chính xác số nguyên
+    // Bộ tích lũy quãng đường sub-milli
     int& getMoveAccumulator() { return m_moveAccumulator; }
     [[nodiscard]] int getMoveAccumulator() const { return m_moveAccumulator; }
 
@@ -69,18 +97,41 @@ public:
     void setSelected(bool sel) { m_selected = sel; }
 
 private:
-    uint32_t m_id{0};                        // Mã định danh đơn vị
-    Faction  m_faction{Faction::Player};     // Phe phái
-    UnitType m_type{UnitType::InfantryDivision}; // Chủng loại đơn vị
-    int32_t  m_posX{0};                      // Tọa độ X (mili-ô)
-    int32_t  m_posY{0};                      // Tọa độ Y (mili-ô)
-    int32_t  m_destX{0};                     // Đích đến X (mili-ô)
-    int32_t  m_destY{0};                     // Đích đến Y (mili-ô)
-    bool     m_hasDestination{false};        // Có đang di chuyển tới đích hay không
-    int      m_manpower{3000};               // Quân số (mặc định 3.000 quân/sư đoàn)
+    uint32_t    m_id{0};
+    Faction     m_faction{Faction::Player};
+    UnitType    m_type{UnitType::Infantry};
+    UnitDomain  m_domain{UnitDomain::Land};
+    std::string m_name;
 
-    int      m_moveAccumulator{0};           // Bộ tích lũy số dư tốc độ
-    bool     m_selected{false};              // Cờ đánh dấu đang được chọn
+    int32_t     m_posX{0};
+    int32_t     m_posY{0};
+    int32_t     m_destX{0};
+    int32_t     m_destY{0};
+    bool        m_hasDestination{false};
+    int         m_moveAccumulator{0};
+    bool        m_selected{false};
+
+    // Máu và quân số
+    int         m_hpPerUnit{100};
+    int         m_maxUnits{1};
+    int         m_currentUnits{1};
+    int         m_hp{100};
+    int         m_maxHp{100};
+
+    // Chỉ số chiến đấu
+    int         m_armor{0};
+    float       m_speedTilesPerSec{1.0f};
+    int         m_speedMilliPerSec{1000};
+    float       m_rangeTiles{1.0f};
+    int         m_visionTiles{7};
+    int         m_cooldownTicks{20};
+    std::vector<WeaponConfig> m_weapons;
+
+    bool        m_canTargetAir{false};
+    bool        m_canTargetGround{true};
+    bool        m_canTargetSea{false};
+    float       m_stealthRevealRangeTiles{0.0f};
+    int         m_iconSizeTiles{1};
 };
 
 } // namespace sim

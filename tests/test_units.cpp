@@ -9,193 +9,237 @@
 
 int main() {
     std::cout << "==================================================\n";
-    std::cout << " [TEST SUITE] Kiem tra Don vi & Di chuyen (Moc M3a)\n";
+    std::cout << " [TEST SUITE] Kiem tra Don vi & Dinh dang JSON M3 \n";
     std::cout << "==================================================\n";
 
     // -------------------------------------------------------------
-    // Test 1: Nap file cau hinh JSON tu thu muc data/
+    // Test 1: Nap file cau hinh JSON tu data/game_config.json
     // -------------------------------------------------------------
-    std::cout << "\n[TEST 1] Nap cau hinh tu data/ (rules, terrain, units)..." << std::endl;
+    std::cout << "\n[TEST 1] Nap cau hinh tu data/game_config.json..." << std::endl;
     sim::SimConfig config;
     if (!config.autoLoad()) {
-        std::cerr << "-> THAT BAI: Khong the tu dong nap cau hinh tu data/!" << std::endl;
+        std::cerr << "-> THAT BAI: Khong the tu dong nap cau hinh tu data/game_config.json!" << std::endl;
         return 1;
     }
 
-    assert(config.getRules().metersPerTile == 100);
-    assert(config.getRules().tickPerSecond == 20);
-    assert(config.getRules().timeScale == 10);
+    // Kiem tra Scale
+    assert(config.getScale().tileMeters == 50);
+    assert(config.getScale().tilePixels == 32);
+    assert(config.getScale().mapWidth == 128);
+    assert(config.getScale().mapHeight == 96);
+    assert(config.getScale().tickRate == 20);
 
-    assert(config.getTerrain().plainMultiplier == 100);
-    assert(config.getTerrain().forestMultiplier == 60);
-    assert(config.getTerrain().hillMultiplier == 50);
-    assert(config.getTerrain().mountainMultiplier == 25);
-    assert(config.getTerrain().riverMultiplier == 20);
-    assert(config.getTerrain().seaMultiplier == 0);
-    assert(config.getTerrain().lakeMultiplier == 0);
+    // Kiem tra du 11 loai don vi
+    assert(config.getAllUnitConfigs().size() == 11);
 
-    assert(config.getInfantry().speedKmh == 5);
-    assert(config.getInfantry().manpower == 3000);
+    const auto* infCfg = config.getUnitConfig(sim::UnitType::Infantry);
+    assert(infCfg != nullptr);
+    assert(infCfg->unitsPerDot == 3000);
+    assert(infCfg->dotsPerSide == 10);
+    assert(infCfg->hpPerUnit == 100);
+    assert(infCfg->armor == 8);
+    assert(infCfg->speedTilesPerSec == 2.13f);
+    assert(infCfg->speedMilliPerSec == 2130);
 
-    std::cout << "-> TEST 1 THANH CONG: Du lieu JSON nạp dung thong so yeu cau!" << std::endl;
+    const auto* cmdCfg = config.getUnitConfig(sim::UnitType::Commander);
+    assert(cmdCfg != nullptr);
+    assert(cmdCfg->unitsPerDot == 1);
+    assert(cmdCfg->hpPerUnit == 100);
+    assert(cmdCfg->armor == 0);
+    assert(cmdCfg->speedTilesPerSec == 2.46f);
+    assert(cmdCfg->speedMilliPerSec == 2460);
+
+    const auto* tankCfg = config.getUnitConfig(sim::UnitType::Leopard2A);
+    assert(tankCfg != nullptr);
+    assert(tankCfg->unitsPerDot == 40);
+    assert(tankCfg->hpPerUnit == 2000);
+    assert(tankCfg->armor == 68);
+
+    const auto* shipCfg = config.getUnitConfig(sim::UnitType::Mogami);
+    assert(shipCfg != nullptr);
+    assert(shipCfg->domain == sim::UnitDomain::Sea);
+    assert(shipCfg->unitsPerDot == 10);
+    assert(shipCfg->hpPerUnit == 4000);
+
+    std::cout << "-> TEST 1 THANH CONG: Du lieu JSON 11 loai don vi va scale nap chinh xac!" << std::endl;
 
     // -------------------------------------------------------------
-    // Test 2: Kiem tra toc do dat bang va rung lech dung ti le 100:60
+    // Test 2: Kiem tra anh xa dia hinh tu WorldMap sang DetailedTerrainType
     // -------------------------------------------------------------
-    std::cout << "\n[TEST 2] Kiem tra toc do tren dat bang va tren rung lech dung ti le 100:60..." << std::endl;
-
-    // A. Kiem tra theo ham calculateDistanceMilli voi cac khoang thoi gian khac nhau
-    for (int ticks : {72, 144, 360, 720, 1440}) {
-        int64_t distPlain = config.calculateDistanceMilli(ticks, sim::TerrainType::Plain);
-        int64_t distForest = config.calculateDistanceMilli(ticks, sim::TerrainType::Forest);
-
-        std::cout << "  Ticks: " << ticks
-                  << " | Quãng đường Đất bằng: " << distPlain << " mili-ô"
-                  << " | Quãng đường Rừng: " << distForest << " mili-ô"
-                  << " | Tỉ lệ: " << (distPlain * 60) << " == " << (distForest * 100) << std::endl;
-
-        if (distPlain * 60 != distForest * 100) {
-            std::cerr << "-> THAT BAI tai ticks=" << ticks << ": ti le khong dung 100:60!" << std::endl;
-            return 1;
-        }
-    }
-
-    // B. Kiem tra thuc te qua WorldSim (chay tick tung buoc mo phong voi Unit that)
+    std::cout << "\n[TEST 2] Kiem tra anh xa dia hinh (Deep Sea, Coastal Sea, Lake, Plain)..." << std::endl;
     {
         sim::WorldMap map(128, 96, 32);
-        // Dat hang 1 la Dat bang (Plain), hang 2 la Rung (Forest)
-        for (int x = 0; x < 128; ++x) {
-            map.setTile(x, 1, sim::TerrainType::Plain);
-            map.setTile(x, 2, sim::TerrainType::Forest);
+        map.fill(sim::TerrainType::Sea);
+
+        // Dat 1 o dat lien Plain o (10, 10)
+        map.setTile(10, 10, sim::TerrainType::Plain);
+
+        // O (10, 11): cach Plain 1 o -> phai la CoastalSea
+        assert(config.classifyTerrain(map, 10, 11) == sim::DetailedTerrainType::CoastalSea);
+        // O (10, 12): cach Plain 2 o -> phai la CoastalSea
+        assert(config.classifyTerrain(map, 10, 12) == sim::DetailedTerrainType::CoastalSea);
+        // O (10, 13): cach Plain 3 o -> phai la DeepSea
+        assert(config.classifyTerrain(map, 10, 13) == sim::DetailedTerrainType::DeepSea);
+        // O (10, 20): cach xa Plain -> phai la DeepSea
+        assert(config.classifyTerrain(map, 10, 20) == sim::DetailedTerrainType::DeepSea);
+
+        // O Lake -> phai la CoastalSea theo quy tac 2
+        map.setTile(30, 30, sim::TerrainType::Lake);
+        assert(config.classifyTerrain(map, 30, 30) == sim::DetailedTerrainType::CoastalSea);
+
+        // He so toc do:
+        // Bo binh tren Plain = 100%, tren Forest = 90%, tren DeepSea = 0%
+        assert(config.getSpeedMultiplierPercent(sim::DetailedTerrainType::Plain, sim::UnitDomain::Land, sim::UnitType::Infantry) == 100);
+        assert(config.getSpeedMultiplierPercent(sim::DetailedTerrainType::Forest, sim::UnitDomain::Land, sim::UnitType::Infantry) == 90);
+        assert(config.getSpeedMultiplierPercent(sim::DetailedTerrainType::DeepSea, sim::UnitDomain::Land, sim::UnitType::Infantry) == 0);
+
+        // Tau tren DeepSea = 100%, CoastalSea = 90%, Plain = 0%
+        assert(config.getSpeedMultiplierPercent(sim::DetailedTerrainType::DeepSea, sim::UnitDomain::Sea, sim::UnitType::Mogami) == 100);
+        assert(config.getSpeedMultiplierPercent(sim::DetailedTerrainType::CoastalSea, sim::UnitDomain::Sea, sim::UnitType::Mogami) == 90);
+        assert(config.getSpeedMultiplierPercent(sim::DetailedTerrainType::Plain, sim::UnitDomain::Sea, sim::UnitType::Mogami) == 0);
+    }
+    std::cout << "-> TEST 2 THANH CONG: Anh xa dia hinh Deep Sea / Coastal Sea / Lake hoat dong chuan!" << std::endl;
+
+    // -------------------------------------------------------------
+    // Test 3: Kiem tra sinh 30 cham moi ben (Player phia Tay, Enemy phia Dong doi xung)
+    // -------------------------------------------------------------
+    std::cout << "\n[TEST 3] Kiem tra sinh 30 cham Player va 30 cham Enemy doi xung..." << std::endl;
+    {
+        sim::WorldMap map(128, 96, 32);
+        // Tao ban do hop le co bien bao quanh va dat bang o giua
+        map.fill(sim::TerrainType::Sea);
+        for (int y = 10; y < 86; ++y) {
+            for (int x = 10; x < 118; ++x) {
+                map.setTile(x, y, sim::TerrainType::Plain);
+            }
         }
 
         sim::WorldSim sim(map);
         sim.loadConfig();
 
-        // Tao don vi 1 tren dat bang, don vi 2 tren rung
-        sim.getUnits().clear();
-        int32_t startX = 10 * 1000 + 500;
-        int32_t startY_plain = 1 * 1000 + 500;
-        int32_t startY_forest = 2 * 1000 + 500;
+        uint64_t seed = 123456789ULL;
+        sim.spawnDivisions(seed);
 
-        sim.getUnits().emplace_back(1, sim::Faction::Player, sim::UnitType::InfantryDivision, startX, startY_plain, 3000);
-        sim.getUnits().emplace_back(2, sim::Faction::Player, sim::UnitType::InfantryDivision, startX, startY_forest, 3000);
+        const auto& units = sim.getUnits();
+        // Tong cong 30 + 30 = 60 cham
+        assert(units.size() == 60);
 
-        // Ra lenh di chuyen ngang 80 o
-        sim.queueMoveCommand({1}, 90, 1);
-        sim.queueMoveCommand({2}, 90, 2);
+        int playerCount = 0;
+        int enemyCount = 0;
+        for (const auto& u : units) {
+            if (u.getFaction() == sim::Faction::Player) {
+                playerCount++;
+                // Toan bo Player phai nam o nua Tay (x < 64)
+                assert(u.getTileX() < 64);
+            } else if (u.getFaction() == sim::Faction::Enemy) {
+                enemyCount++;
+                // Toan bo Enemy phai nam o nua Dong (x >= 64)
+                assert(u.getTileX() >= 64);
+            }
 
-        // Chay mo phong 72 ticks (3.6 giay)
-        for (int t = 0; t < 72; ++t) {
-            sim.tick();
+            // Kiem tra don vi luon nam tren o di duoc cua dung mien
+            sim::DetailedTerrainType dt = config.classifyTerrain(map, u.getTileX(), u.getTileY());
+            bool passable = config.isPassable(dt, u.getDomain(), u.getType());
+            assert(passable == true);
         }
 
-        const auto* uPlain = sim.getUnitById(1);
-        const auto* uForest = sim.getUnitById(2);
+        assert(playerCount == 30);
+        assert(enemyCount == 30);
 
-        int32_t movedPlain = uPlain->getPosX() - startX;
-        int32_t movedForest = uForest->getPosX() - startX;
-
-        std::cout << "  [Thuc te Sim sau 72 tick] Dat bang di duoc: " << movedPlain
-                  << " mili-o, Rung di duoc: " << movedForest << " mili-o" << std::endl;
-
-        if (movedPlain * 60 != movedForest * 100) {
-            std::cerr << "-> THAT BAI: Ty le di chuyen thuc te lech ("
-                      << movedPlain * 60 << " != " << movedForest * 100 << ")" << std::endl;
-            return 1;
-        }
-
-        if (movedPlain != 500 || movedForest != 300) {
-            std::cerr << "-> THAT BAI: Gia tri quang duong ky vong 500 va 300 nhung nhan duoc: "
-                      << movedPlain << " va " << movedForest << std::endl;
-            return 1;
+        // Kiem tra tinh tat dinh
+        sim::WorldSim sim2(map);
+        sim2.loadConfig();
+        sim2.spawnDivisions(seed);
+        assert(sim2.getUnits().size() == 60);
+        for (size_t i = 0; i < 60; ++i) {
+            assert(units[i].getId() == sim2.getUnits()[i].getId());
+            assert(units[i].getPosX() == sim2.getUnits()[i].getPosX());
+            assert(units[i].getPosY() == sim2.getUnits()[i].getPosY());
+            assert(units[i].getType() == sim2.getUnits()[i].getType());
+            assert(units[i].getFaction() == sim2.getUnits()[i].getFaction());
         }
     }
-    std::cout << "-> TEST 2 THANH CONG: Ty le toc do tren dat bang va rung dat chuan 100:60 tuyet doi!" << std::endl;
+    std::cout << "-> TEST 3 THANH CONG: Sinh du 60 cham (30 Player Tay, 30 Enemy Dong) tat dinh va dung dia hinh!" << std::endl;
 
     // -------------------------------------------------------------
-    // Test 3: Kiem tra khoi tao 10 su doan tat dinh tu seed
+    // Test 4: Kiem tra takeDamage, giam so quan va xoa cham khi het mau
     // -------------------------------------------------------------
-    std::cout << "\n[TEST 3] Kiem tra sinh 10 su doan tat dinh tu seed tren dat bang..." << std::endl;
-    {
-        sim::WorldMap mapA(128, 96, 32);
-        sim::WorldMap mapB(128, 96, 32);
-        // Dien toan bo bang Plain ngoai tru vien
-        mapA.fill(sim::TerrainType::Plain);
-        mapB.fill(sim::TerrainType::Plain);
-
-        sim::WorldSim simA(mapA);
-        sim::WorldSim simB(mapB);
-        simA.loadConfig();
-        simB.loadConfig();
-
-        uint64_t testSeed = 987654321ULL;
-        simA.spawnPlayerDivisions(testSeed);
-        simB.spawnPlayerDivisions(testSeed);
-
-        assert(simA.getUnits().size() == 10);
-        assert(simB.getUnits().size() == 10);
-
-        for (size_t i = 0; i < 10; ++i) {
-            const auto& ua = simA.getUnits()[i];
-            const auto& ub = simB.getUnits()[i];
-            if (ua.getPosX() != ub.getPosX() || ua.getPosY() != ub.getPosY()) {
-                std::cerr << "-> THAT BAI: Don vi " << i << " vi tri khong giong nhau giua 2 lan chay!" << std::endl;
-                return 1;
-            }
-            if (mapA.getTile(ua.getTileX(), ua.getTileY()) != sim::TerrainType::Plain) {
-                std::cerr << "-> THAT BAI: Don vi " << i << " khong nam tren dat bang Plain!" << std::endl;
-                return 1;
-            }
-            assert(ua.getManpower() == 3000);
-            assert(ua.getFaction() == sim::Faction::Player);
-        }
-    }
-    std::cout << "-> TEST 3 THANH CONG: 10 su doan khoi tao tat dinh 100% tren dat bang!" << std::endl;
-
-    // -------------------------------------------------------------
-    // Test 4: Di chuyen thang toi dich va dung lai khi den noi
-    // -------------------------------------------------------------
-    std::cout << "\n[TEST 4] Kiem tra di chuyen thang toi dich va den noi..." << std::endl;
+    std::cout << "\n[TEST 4] Kiem tra takeDamage, cap nhat quan so va xoa cham khi chet..." << std::endl;
     {
         sim::WorldMap map(128, 96, 32);
         map.fill(sim::TerrainType::Plain);
         sim::WorldSim sim(map);
         sim.loadConfig();
 
-        sim.getUnits().emplace_back(1, sim::Faction::Player, sim::UnitType::InfantryDivision, 10000, 10000, 3000);
-        // Ra lenh di chuyen toi o (11, 10) -> destX = 11500, destY = 10500
-        sim.queueMoveCommand({1}, 11, 10);
+        const auto* infCfg = sim.getConfig().getUnitConfig(sim::UnitType::Infantry);
+        assert(infCfg != nullptr);
 
-        // Khi chua tick, lenh van trong hang doi
-        assert(sim.getUnits()[0].hasDestination() == false);
+        // Tao 1 don vi bo binh: 3000 quan, 100 hp/quan -> tong hp = 300,000
+        sim.getUnits().emplace_back(1, sim::Faction::Player, sim::UnitType::Infantry, 10000, 10000, *infCfg);
 
-        // Tick 1: lenh duoc ap dung
+        auto* u = sim.getUnitById(1);
+        assert(u != nullptr);
+        assert(u->getHp() == 300000);
+        assert(u->getCurrentUnits() == 3000);
+        assert(u->isDead() == false);
+
+        // Ban mat 50 mau -> hp = 299950 -> ceil(299950 / 100) = 3000 quan
+        u->takeDamage(50);
+        assert(u->getHp() == 299950);
+        assert(u->getCurrentUnits() == 3000);
+
+        // Ban tiep 50 mau -> hp = 299900 -> ceil(299900 / 100) = 2999 quan (thuong vong 1 quan)
+        u->takeDamage(50);
+        assert(u->getHp() == 299900);
+        assert(u->getCurrentUnits() == 2999);
+
+        // Ban mat 199,900 mau -> hp = 100,000 -> 1000 quan
+        u->takeDamage(199900);
+        assert(u->getHp() == 100000);
+        assert(u->getCurrentUnits() == 1000);
+
+        // Ban ket lieu 100,000 mau -> hp = 0 -> 0 quan -> isDead = true
+        u->takeDamage(100000);
+        assert(u->getHp() == 0);
+        assert(u->getCurrentUnits() == 0);
+        assert(u->isDead() == true);
+
+        // Truoc khi tick, don vi van con trong vector
+        assert(sim.getUnits().size() == 1);
+
+        // Chay tick: don vi da chet phai bi xoa khoi danh sach cham
         sim.tick();
-        assert(sim.getUnits()[0].hasDestination() == true);
-        assert(sim.getUnits()[0].getDestX() == 11500);
-        assert(sim.getUnits()[0].getDestY() == 10500);
-
-        // Chay du so tick de don vi toi dich (khoang cach khoang 1581 mili-o, moi tick ~6.94 mili-o -> ~230 tick)
-        for (int t = 0; t < 300; ++t) {
-            sim.tick();
-        }
-
-        const auto* u = sim.getUnitById(1);
-        if (u->hasDestination()) {
-            std::cerr << "-> THAT BAI: Don vi chua den dich sau 300 tick!" << std::endl;
-            return 1;
-        }
-        if (u->getPosX() != 11500 || u->getPosY() != 10500) {
-            std::cerr << "-> THAT BAI: Toa do cuoi khong trung tam o dich (11500, 10500)! Thuc te: ("
-                      << u->getPosX() << ", " << u->getPosY() << ")" << std::endl;
-            return 1;
-        }
+        assert(sim.getUnits().empty());
+        assert(sim.getUnitById(1) == nullptr);
     }
-    std::cout << "-> TEST 4 THANH CONG: Di chuyen thang toi dich va dung chinh xac!" << std::endl;
+    std::cout << "-> TEST 4 THANH CONG: Cong thuc mau, thuong vong va xoa cham khi ve 0 hoan toan chinh xac!" << std::endl;
+
+    // -------------------------------------------------------------
+    // Test 5: Kiem tra buoc di va quang duong di chuyen theo speedTilesPerSec
+    // -------------------------------------------------------------
+    std::cout << "\n[TEST 5] Kiem tra toc do di chuyen theo speedTilesPerSec..." << std::endl;
+    {
+        // Bo binh speedTilesPerSec = 2.13 -> 2130 mili-o/s
+        // Tren Plain (100%): 20 tick di duoc dung 2130 mili-o
+        int accPlain = 0;
+        int totalPlain = 0;
+        for (int t = 0; t < 20; ++t) {
+            totalPlain += config.calculateStepMilli(sim::DetailedTerrainType::Plain, sim::UnitType::Infantry, accPlain);
+        }
+        assert(totalPlain == 2130);
+
+        // Tren Forest (90%): 2130 * 90 / 100 = 1917 mili-o/s
+        int accForest = 0;
+        int totalForest = 0;
+        for (int t = 0; t < 20; ++t) {
+            totalForest += config.calculateStepMilli(sim::DetailedTerrainType::Forest, sim::UnitType::Infantry, accForest);
+        }
+        assert(totalForest == 1917);
+    }
+    std::cout << "-> TEST 5 THANH CONG: Tich luy toc do di chuyen 20 tick/s bao toan 100% so nguyen!" << std::endl;
 
     std::cout << "\n==================================================\n";
-    std::cout << " ALL TESTS PASSED! MOC M3a HOAN TOAN CHUAN XAC!    \n";
+    std::cout << " ALL TESTS PASSED! MOC M3 JSON HOAN TOAN CHUAN XAC!\n";
     std::cout << "==================================================\n";
     return 0;
 }

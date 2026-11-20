@@ -12,28 +12,23 @@ namespace sim {
 
 /**
  * @brief Lớp WorldSim quản lý toàn bộ trạng thái mô phỏng game (thuần C++, không SDL, không float).
- *
- * Chức năng:
- * - Tiếp nhận và lưu trữ các lệnh từ người chơi/AI vào hàng đợi (command queue).
- * - Thực hiện bước mô phỏng cố định (tick) theo quy tắc 20 tick/giây.
- * - Quản lý danh sách các sư đoàn quân đội (Unit).
- * - Khởi tạo 10 sư đoàn bộ binh tất định từ seed trên các ô đất bằng gần nhau.
  */
 class WorldSim {
 public:
     explicit WorldSim(WorldMap& map);
     ~WorldSim() = default;
 
-    // Nạp cấu hình từ thư mục data/
+    // Nạp cấu hình từ data/game_config.json
     bool loadConfig();
 
-    // Sinh 10 sư đoàn bộ binh người chơi theo cách tất định từ seed
-    void spawnPlayerDivisions(uint64_t seed);
+    // Sinh 30 chấm cho mỗi bên (Player phía Tây, Enemy phía Đông, đối xứng gương)
+    void spawnDivisions(uint64_t seed);
+    void spawnPlayerDivisions(uint64_t seed) { spawnDivisions(seed); }
 
-    // Gửi một lệnh vào hàng đợi mô phỏng (áp dụng ở đầu tick tiếp theo)
+    // Gửi lệnh vào hàng đợi mô phỏng (áp dụng ở đầu tick tiếp theo)
     void queueCommand(const Command& cmd);
 
-    // Tiện ích gửi lệnh di chuyển cho một danh sách đơn vị tới ô đích
+    // Tiện ích gửi lệnh di chuyển cho danh sách đơn vị tới ô đích
     void queueMoveCommand(const std::vector<uint32_t>& unitIds, int targetTileX, int targetTileY);
 
     // Thực hiện 1 bước mô phỏng cố định (1 tick)
@@ -47,6 +42,7 @@ public:
     [[nodiscard]] Unit* getUnitById(uint32_t id);
 
     [[nodiscard]] const SimConfig& getConfig() const { return m_config; }
+    [[nodiscard]] SimConfig& getConfig() { return m_config; }
     [[nodiscard]] const WorldMap& getMap() const { return m_map; }
     [[nodiscard]] uint64_t getCurrentTick() const { return m_currentTick; }
 

@@ -2,28 +2,10 @@
 #include <nlohmann/json.hpp>
 #include <cstdio>
 #include <iostream>
+#include <cmath>
 #include <vector>
 
 namespace sim {
-
-int TerrainConfig::getMultiplier(TerrainType type) const {
-    switch (type) {
-        case TerrainType::Plain:    return plainMultiplier;
-        case TerrainType::Forest:   return forestMultiplier;
-        case TerrainType::Hill:     return hillMultiplier;
-        case TerrainType::Mountain: return mountainMultiplier;
-        case TerrainType::River:    return riverMultiplier;
-        case TerrainType::Sea:      return seaMultiplier;
-        case TerrainType::Lake:     return lakeMultiplier;
-        default:                    return 0;
-    }
-}
-
-bool TerrainConfig::isPassable(TerrainType type) const {
-    return getMultiplier(type) > 0;
-}
-
-SimConfig::SimConfig() = default;
 
 static bool fileExists(const std::string& path) {
     FILE* f = std::fopen(path.c_str(), "rb");
@@ -52,155 +34,289 @@ static bool readFileToString(const std::string& path, std::string& outContent) {
     return true;
 }
 
+SimConfig::SimConfig() {
+    // Khởi tạo trước mảng 8 loại địa hình
+    m_terrains.resize(8);
+}
+
 bool SimConfig::autoLoad() {
-    std::vector<std::string> searchDirs = {
-        "data",
-        "../data",
-        "../../data"
+    const std::vector<std::string> candidatePaths = {
+        "data/game_config.json",
+        "../data/game_config.json",
+        "../../data/game_config.json"
     };
 
-    for (const auto& dir : searchDirs) {
-        std::string testPath = dir + "/rules.json";
-        if (fileExists(testPath)) {
-            return loadFromDirectory(dir);
+    for (const auto& path : candidatePaths) {
+        if (fileExists(path)) {
+            return loadFromFile(path);
         }
     }
 
-    std::cerr << "[SimConfig] LOI: Khong tim thay thu muc 'data/' chua cac file cau hinh!" << std::endl;
+    std::cerr << "[SimConfig] LOI: Khong tim thay file 'data/game_config.json'!" << std::endl;
     return false;
 }
 
-bool SimConfig::loadFromDirectory(const std::string& dirPath) {
-    // 1. Doc file data/rules.json
-    std::string rulesPath = dirPath + "/rules.json";
-    std::string rulesContent;
-    if (!readFileToString(rulesPath, rulesContent)) {
-        std::cerr << "[SimConfig] LOI: Khong the mo file '" << rulesPath << "'" << std::endl;
+static UnitDomain parseDomain(const std::string& domainStr) {
+    if (domainStr == "AIR") return UnitDomain::Air;
+    if (domainStr == "SEA") return UnitDomain::Sea;
+    return UnitDomain::Land;
+}
+
+static UnitType parseUnitTypeKey(const std::string& key) {
+    if (key == "COMMANDER") return UnitType::Commander;
+    if (key == "INFANTRY") return UnitType::Infantry;
+    if (key == "LEOPARD_2A") return UnitType::Leopard2A;
+    if (key == "T14_ARMATA") return UnitType::T14Armata;
+    if (key == "PUMA") return UnitType::Puma;
+    if (key == "CAESAR") return UnitType::Caesar;
+    if (key == "GEPARD") return UnitType::Gepard;
+    if (key == "SU57") return UnitType::Su57;
+    if (key == "B2_SPIRIT") return UnitType::B2Spirit;
+    if (key == "FFM3_MOGAMI") return UnitType::Mogami;
+    if (key == "DD151_ASAGIRI") return UnitType::Asagiri;
+    return UnitType::Count;
+}
+
+bool SimConfig::loadFromFile(const std::string& filePath) {
+    std::string content;
+    if (!readFileToString(filePath, content)) {
+        std::cerr << "[SimConfig] LOI: Khong the mo file cau hinh '" << filePath << "'!" << std::endl;
         return false;
     }
 
+    nlohmann::json root;
     try {
-        nlohmann::json jRules = nlohmann::json::parse(rulesContent);
-        if (!jRules.contains("meters_per_tile") || !jRules.contains("tick_per_second") || !jRules.contains("time_scale")) {
-            std::cerr << "[SimConfig] LOI: File '" << rulesPath << "' thieu truong bat buoc (meters_per_tile, tick_per_second, time_scale)!" << std::endl;
+        root = nlohmann::json::parse(content);
+    } catch (const std::exception& e) {
+        std::cerr << "[SimConfig] LOI phan tich JSON trong '" << filePath << "': " << e.what() << std::endl;
+        return false;
+    }
+
+    // 1. Kiem tra va nap Scale
+    if (!root.contains("scale") || !root["scale"].is_object()) {
+        std::cerr << "[SimConfig] LOI: File '" << filePath << "' thieu truong 'scale'!" << std::endl;
+        return false;
+    }
+    const auto& jScale = root["scale"];
+    m_scale.tileMeters = jScale.value("tileMeters", 50);
+    m_scale.tilePixels = jScale.value("tilePixels", 32);
+    m_scale.tickRate = jScale.value("tickRate", 20);
+    if (jScale.contains("mapTiles") && jScale["mapTiles"].is_array() && jScale["mapTiles"].size() >= 2) {
+        m_scale.mapWidth = jScale["mapTiles"][0].get<int>();
+        m_scale.mapHeight = jScale["mapTiles"][1].get<int>();
+    }
+
+    // 2. Kiem tra va nap Terrain
+    if (!root.contains("terrain") || !root["terrain"].is_object()) {
+        std::cerr << "[SimConfig] LOI: File '" << filePath << "' thieu truong 'terrain'!" << std::endl;
+        return false;
+    }
+    const auto& jTerrain = root["terrain"];
+    const std::vector<std::pair<std::string, DetailedTerrainType>> terrainKeys = {
+        {"DEEP_SEA", DetailedTerrainType::DeepSea},
+        {"COASTAL_SEA", DetailedTerrainType::CoastalSea},
+        {"PLAIN", DetailedTerrainType::Plain},
+        {"FOREST", DetailedTerrainType::Forest},
+        {"HILL", DetailedTerrainType::Hill},
+        {"MOUNTAIN", DetailedTerrainType::Mountain},
+        {"RIVER", DetailedTerrainType::River},
+        {"FORD", DetailedTerrainType::Ford}
+    };
+
+    m_terrains.assign(8, TerrainProperty{});
+    for (const auto& [k, type] : terrainKeys) {
+        if (!jTerrain.contains(k)) {
+            std::cerr << "[SimConfig] LOI: File '" << filePath << "' thieu thong tin dia hinh '" << k << "'!" << std::endl;
             return false;
         }
-        m_rules.metersPerTile = jRules["meters_per_tile"].get<int>();
-        m_rules.tickPerSecond = jRules["tick_per_second"].get<int>();
-        m_rules.timeScale = jRules["time_scale"].get<int>();
-    } catch (const std::exception& e) {
-        std::cerr << "[SimConfig] LOI phan tich JSON trong '" << rulesPath << "': " << e.what() << std::endl;
-        return false;
+        const auto& tObj = jTerrain[k];
+        int id = tObj.value("id", static_cast<int>(type));
+        if (id < 0 || id >= 8) id = static_cast<int>(type);
+
+        TerrainProperty prop;
+        prop.name = tObj.value("name", k);
+        prop.defBonus = tObj.value("defBonus", 0.0f);
+        prop.visionMod = tObj.value("visionMod", 0);
+        prop.rangeMod = tObj.value("rangeMod", 0);
+        prop.ambush = tObj.value("ambush", false);
+
+        if (tObj.contains("speed") && tObj["speed"].is_object()) {
+            const auto& s = tObj["speed"];
+            prop.speedInfantry = s.value("infantry", 0.0f);
+            prop.speedVehicle = s.value("vehicle", 0.0f);
+            prop.speedShip = s.value("ship", 0.0f);
+            prop.speedAir = s.value("air", 1.0f);
+        }
+        m_terrains[static_cast<size_t>(id)] = prop;
     }
 
-    // 2. Doc file data/terrain.json
-    std::string terrainPath = dirPath + "/terrain.json";
-    std::string terrainContent;
-    if (!readFileToString(terrainPath, terrainContent)) {
-        std::cerr << "[SimConfig] LOI: Khong the mo file '" << terrainPath << "'" << std::endl;
+    // 3. Kiem tra va nap Units
+    if (!root.contains("units") || !root["units"].is_object()) {
+        std::cerr << "[SimConfig] LOI: File '" << filePath << "' thieu truong 'units'!" << std::endl;
         return false;
     }
+    const auto& jUnits = root["units"];
+    m_unitConfigs.clear();
 
-    try {
-        nlohmann::json jTerrain = nlohmann::json::parse(terrainContent);
-        if (!jTerrain.contains("infantry_speed_multiplier")) {
-            std::cerr << "[SimConfig] LOI: File '" << terrainPath << "' thieu khoa 'infantry_speed_multiplier'!" << std::endl;
+    const std::vector<std::string> unitKeyList = {
+        "COMMANDER", "INFANTRY", "LEOPARD_2A", "T14_ARMATA", "PUMA",
+        "CAESAR", "GEPARD", "SU57", "B2_SPIRIT", "FFM3_MOGAMI", "DD151_ASAGIRI"
+    };
+
+    for (const auto& uKey : unitKeyList) {
+        if (!jUnits.contains(uKey)) {
+            std::cerr << "[SimConfig] LOI: File '" << filePath << "' thieu thong so don vi '" << uKey << "'!" << std::endl;
             return false;
         }
-        const auto& sm = jTerrain["infantry_speed_multiplier"];
-        m_terrain.plainMultiplier = sm.value("Plain", 100);
-        m_terrain.forestMultiplier = sm.value("Forest", 60);
-        m_terrain.hillMultiplier = sm.value("Hill", 50);
-        m_terrain.mountainMultiplier = sm.value("Mountain", 25);
-        m_terrain.riverMultiplier = sm.value("River", 20);
-        m_terrain.seaMultiplier = sm.value("Sea", 0);
-        m_terrain.lakeMultiplier = sm.value("Lake", 0);
-    } catch (const std::exception& e) {
-        std::cerr << "[SimConfig] LOI phan tich JSON trong '" << terrainPath << "': " << e.what() << std::endl;
-        return false;
-    }
+        const auto& uObj = jUnits[uKey];
+        UnitTypeConfig cfg;
+        cfg.key = uKey;
+        cfg.name = uObj.value("name", uKey);
+        cfg.domain = parseDomain(uObj.value("domain", "LAND"));
+        cfg.unitsPerDot = uObj.value("unitsPerDot", 1);
+        cfg.dotsPerSide = uObj.value("dotsPerSide", 1);
+        cfg.totalPerSide = uObj.value("totalPerSide", 1);
+        cfg.hpPerUnit = uObj.value("hpPerUnit", 100);
+        cfg.armor = uObj.value("armor", 0);
+        cfg.speedTilesPerSec = uObj.value("speedTilesPerSec", 1.0f);
+        cfg.speedMilliPerSec = static_cast<int>(std::round(cfg.speedTilesPerSec * 1000.0f));
+        cfg.rangeTiles = uObj.value("rangeTiles", 1.0f);
+        cfg.visionTiles = uObj.value("visionTiles", 7);
+        cfg.cooldownTicks = uObj.value("cooldownTicks", 20);
+        cfg.canTargetAir = uObj.value("canTargetAir", false);
+        cfg.canTargetGround = uObj.value("canTargetGround", true);
+        cfg.canTargetSea = uObj.value("canTargetSea", false);
+        cfg.stealthRevealRangeTiles = uObj.value("stealthRevealRangeTiles", 0.0f);
+        cfg.iconSizeTiles = uObj.value("iconSizeTiles", 1);
 
-    // 3. Doc file data/units.json
-    std::string unitsPath = dirPath + "/units.json";
-    std::string unitsContent;
-    if (!readFileToString(unitsPath, unitsContent)) {
-        std::cerr << "[SimConfig] LOI: Khong the mo file '" << unitsPath << "'" << std::endl;
-        return false;
-    }
-
-    try {
-        nlohmann::json jUnits = nlohmann::json::parse(unitsContent);
-        if (!jUnits.contains("infantry_division")) {
-            std::cerr << "[SimConfig] LOI: File '" << unitsPath << "' thieu dinh nghia 'infantry_division'!" << std::endl;
-            return false;
+        if (uObj.contains("weapons") && uObj["weapons"].is_array()) {
+            for (const auto& w : uObj["weapons"]) {
+                WeaponConfig wcfg;
+                wcfg.ammo = w.value("ammo", "AP");
+                wcfg.dmg = w.value("dmg", 0);
+                wcfg.splash = w.value("splash", 0.0f);
+                wcfg.rounds = w.value("rounds", 1);
+                wcfg.accuracy = w.value("accuracy", 1.0f);
+                wcfg.smallArms = w.value("smallArms", false);
+                cfg.weapons.push_back(wcfg);
+            }
         }
-        const auto& inf = jUnits["infantry_division"];
-        m_infantry.speedKmh = inf.value("speed_kmh", 5);
-        m_infantry.manpower = inf.value("manpower", 3000);
-        m_infantry.hp = inf.value("hp", 1000);
-        m_infantry.attack = inf.value("attack", 0);
-        m_infantry.armor = inf.value("armor", 0);
-        m_infantry.range = inf.value("range", 0);
-    } catch (const std::exception& e) {
-        std::cerr << "[SimConfig] LOI phan tich JSON trong '" << unitsPath << "': " << e.what() << std::endl;
-        return false;
+        m_unitConfigs.push_back(cfg);
     }
 
-    std::cout << "[SimConfig] Nap thanh cong cau hinh tu '" << dirPath << "'\n"
-              << "  Rules: " << m_rules.metersPerTile << " m/o, "
-              << m_rules.tickPerSecond << " tick/s, time_scale " << m_rules.timeScale << "x\n"
-              << "  Terrain multipliers: Plain=" << m_terrain.plainMultiplier
-              << "%, Forest=" << m_terrain.forestMultiplier
-              << "%, Hill=" << m_terrain.hillMultiplier
-              << "%, Mountain=" << m_terrain.mountainMultiplier
-              << "%, River=" << m_terrain.riverMultiplier << "%\n"
-              << "  Infantry: " << m_infantry.speedKmh << " km/h, "
-              << m_infantry.manpower << " quan" << std::endl;
+    std::cout << "[SimConfig] Nap thanh cong cau hinh tu '" << filePath << "' (11 loai don vi, 8 loai dia hinh)\n"
+              << "  Scale: 1 o = " << m_scale.tileMeters << " m, "
+              << m_scale.tilePixels << " px, ban do " << m_scale.mapWidth << "x" << m_scale.mapHeight
+              << ", tickRate " << m_scale.tickRate << " tps" << std::endl;
     return true;
 }
 
-int SimConfig::calculateStepMilli(TerrainType terrain, int& accumulator) const {
-    int mult = m_terrain.getMultiplier(terrain);
-    if (mult <= 0) {
-        return 0; // Dia hinh khong di duoc (bien, ho)
+DetailedTerrainType SimConfig::classifyTerrain(const WorldMap& map, int tileX, int tileY) const {
+    if (!map.isInBounds(tileX, tileY)) {
+        return DetailedTerrainType::DeepSea;
     }
 
-    int64_t num = static_cast<int64_t>(m_infantry.speedKmh)
-                * m_rules.timeScale
-                * 25LL
-                * mult;
+    TerrainType t = map.getTile(tileX, tileY);
+    switch (t) {
+        case TerrainType::Plain:
+            return DetailedTerrainType::Plain;
+        case TerrainType::Forest:
+            return DetailedTerrainType::Forest;
+        case TerrainType::Hill:
+            return DetailedTerrainType::Hill;
+        case TerrainType::Mountain:
+            return DetailedTerrainType::Mountain;
+        case TerrainType::River:
+            return DetailedTerrainType::River;
+        case TerrainType::Lake:
+            // Quy tac 2: Lake cua M2 dung chi so COASTAL_SEA
+            return DetailedTerrainType::CoastalSea;
+        case TerrainType::Sea: {
+            // Quy tac 2: Sea cua M2: o cach dat lien tu 3 o tro len la DEEP_SEA, con lai la COASTAL_SEA
+            // Kiem tra trong ban kinh 2 o (khoang cach Chebyshev <= 2) co o dat lien nao khong
+            for (int dy = -2; dy <= 2; ++dy) {
+                for (int dx = -2; dx <= 2; ++dx) {
+                    int nx = tileX + dx;
+                    int ny = tileY + dy;
+                    if (map.isInBounds(nx, ny)) {
+                        TerrainType neighbor = map.getTile(nx, ny);
+                        // Dat lien la bat ky loai nao khong phai Sea va khong phai Lake
+                        if (neighbor != TerrainType::Sea && neighbor != TerrainType::Lake) {
+                            return DetailedTerrainType::CoastalSea;
+                        }
+                    }
+                }
+            }
+            return DetailedTerrainType::DeepSea;
+        }
+        default:
+            return DetailedTerrainType::Plain;
+    }
+}
 
-    int64_t den = 9LL
-                * m_rules.tickPerSecond
-                * m_rules.metersPerTile;
+int SimConfig::getSpeedMultiplierPercent(DetailedTerrainType terrain, UnitDomain domain, UnitType type) const {
+    size_t idx = static_cast<size_t>(terrain);
+    if (idx >= m_terrains.size()) return 0;
+    const auto& prop = m_terrains[idx];
 
-    if (den <= 0) {
-        return 0;
+    float sp = 0.0f;
+    if (type == UnitType::Infantry) {
+        sp = prop.speedInfantry;
+    } else if (domain == UnitDomain::Air) {
+        sp = prop.speedAir;
+    } else if (domain == UnitDomain::Sea) {
+        sp = prop.speedShip;
+    } else {
+        // Cac don vi mat dat khac: xe tang, thiet giap, phao, tu lenh
+        sp = prop.speedVehicle;
     }
 
-    accumulator += static_cast<int>(num);
-    int step = accumulator / static_cast<int>(den);
-    accumulator %= static_cast<int>(den);
+    return static_cast<int>(std::round(sp * 100.0f));
+}
+
+bool SimConfig::isPassable(DetailedTerrainType terrain, UnitDomain domain, UnitType type) const {
+    return getSpeedMultiplierPercent(terrain, domain, type) > 0;
+}
+
+int SimConfig::calculateStepMilli(DetailedTerrainType terrain, UnitType type, int& accumulator) const {
+    const UnitTypeConfig* cfg = getUnitConfig(type);
+    if (!cfg) return 0;
+
+    int multPercent = getSpeedMultiplierPercent(terrain, cfg->domain, type);
+    if (multPercent <= 0) return 0;
+
+    int num = cfg->speedMilliPerSec * multPercent;
+    int den = 100 * m_scale.tickRate;
+    if (den <= 0) return 0;
+
+    accumulator += num;
+    int step = accumulator / den;
+    accumulator %= den;
     return step;
 }
 
-int64_t SimConfig::calculateDistanceMilli(int ticks, TerrainType terrain) const {
-    int mult = m_terrain.getMultiplier(terrain);
-    if (mult <= 0 || ticks <= 0) {
-        return 0;
+const UnitTypeConfig* SimConfig::getUnitConfig(UnitType type) const {
+    size_t idx = static_cast<size_t>(type);
+    if (idx < m_unitConfigs.size()) {
+        return &m_unitConfigs[idx];
     }
+    return nullptr;
+}
 
-    int64_t num = static_cast<int64_t>(ticks)
-                * m_infantry.speedKmh
-                * m_rules.timeScale
-                * 25LL
-                * mult;
+const UnitTypeConfig* SimConfig::getUnitConfigByKey(const std::string& key) const {
+    for (const auto& u : m_unitConfigs) {
+        if (u.key == key) return &u;
+    }
+    return nullptr;
+}
 
-    int64_t den = 9LL
-                * m_rules.tickPerSecond
-                * m_rules.metersPerTile;
-
-    return (den > 0) ? (num / den) : 0;
+const TerrainProperty& SimConfig::getTerrainProperty(DetailedTerrainType type) const {
+    size_t idx = static_cast<size_t>(type);
+    if (idx < m_terrains.size()) {
+        return m_terrains[idx];
+    }
+    static const TerrainProperty emptyProp{};
+    return emptyProp;
 }
 
 } // namespace sim
