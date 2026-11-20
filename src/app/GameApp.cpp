@@ -182,31 +182,133 @@ void GameApp::processEvents() {
                 else if (m_mapRenderer.handleMinimapClick(event.button.x, event.button.y, winW, winH, m_worldMap, m_camera)) {
                     m_isDraggingMinimap = true;
                 }
+                // 3. Chuột trái trên chiến trường: Bắt đầu chọn quân hoặc kéo chọn vùng
+                else {
+                    m_boxStartX = event.button.x;
+                    m_boxStartY = event.button.y;
+                    m_boxCurrentX = event.button.x;
+                    m_boxCurrentY = event.button.y;
+                    m_isBoxSelecting = true;
+                }
             } else if (event.button.button == SDL_BUTTON_RIGHT) {
-                // Click chuột phải: ra lệnh cho toàn bộ sư đoàn di chuyển thẳng tới ô đích
+                // Click chuột phải: ra lệnh di chuyển cho các chấm Player đang được chọn
                 float worldX = m_camera.screenToWorldX(static_cast<float>(event.button.x));
                 float worldY = m_camera.screenToWorldY(static_cast<float>(event.button.y));
                 int targetTileX = static_cast<int>(worldX) / m_worldMap.getTileSize();
                 int targetTileY = static_cast<int>(worldY) / m_worldMap.getTileSize();
 
                 if (m_worldMap.isInBounds(targetTileX, targetTileY)) {
-                    std::vector<uint32_t> ids;
+                    std::vector<uint32_t> selectedIds;
                     for (const auto& u : m_worldSim.getUnits()) {
-                        if (u.getFaction() == sim::Faction::Player) {
-                            ids.push_back(u.getId());
+                        if (u.isSelected() && u.getFaction() == sim::Faction::Player) {
+                            selectedIds.push_back(u.getId());
                         }
                     }
-                    m_worldSim.queueMoveCommand(ids, targetTileX, targetTileY);
+                    if (!selectedIds.empty()) {
+                        m_worldSim.queueMoveCommand(selectedIds, targetTileX, targetTileY);
+                    }
                 }
             }
         } else if (event.type == SDL_MOUSEBUTTONUP) {
             if (event.button.button == SDL_BUTTON_LEFT) {
-                m_isDraggingMinimap = false;
+                if (m_isDraggingMinimap) {
+                    m_isDraggingMinimap = false;
+                } else if (m_isBoxSelecting) {
+                    m_isBoxSelecting = false;
+                    int dragDist = std::max(std::abs(m_boxCurrentX - m_boxStartX), std::abs(m_boxCurrentY - m_boxStartY));
+                    bool shiftHeld = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                    float pixelScale = static_cast<float>(m_worldSim.getConfig().getTilePixels());
+
+                    // A. Click đơn lẻ (kéo thả <= 5 pixel)
+                    if (dragDist <= 5) {
+                        uint32_t clickedPlayerId = 0;
+                        uint32_t clickedEnemyId = 0;
+                        float bestDistSq = 999999.0f;
+
+                        for (const auto& u : m_worldSim.getUnits()) {
+                            if (u.isDead()) continue;
+                            float wx = static_cast<float>(u.getPosX()) * pixelScale / 1000.0f;
+                            float wy = static_cast<float>(u.getPosY()) * pixelScale / 1000.0f;
+                            float sx = m_camera.worldToScreenX(wx);
+                            float sy = m_camera.worldToScreenY(wy);
+                            float dSq = (sx - m_boxStartX) * (sx - m_boxStartX) + (sy - m_boxStartY) * (sy - m_boxStartY);
+                            float hitRadius = std::max(12.0f, 16.0f * m_camera.getZoom());
+                            if (dSq <= hitRadius * hitRadius && dSq < bestDistSq) {
+                                bestDistSq = dSq;
+                                if (u.getFaction() == sim::Faction::Player) {
+                                    clickedPlayerId = u.getId();
+                                    clickedEnemyId = 0;
+                                } else {
+                                    clickedEnemyId = u.getId();
+                                    clickedPlayerId = 0;
+                                }
+                            }
+                        }
+
+                        if (clickedPlayerId != 0) {
+                            if (!shiftHeld) {
+                                for (auto& u : m_worldSim.getUnits()) {
+                                    u.setSelected(u.getId() == clickedPlayerId);
+                                }
+                            } else {
+                                auto* u = m_worldSim.getUnitById(clickedPlayerId);
+                                if (u) u->setSelected(!u->isSelected());
+                            }
+                            m_inspectedUnitId = clickedPlayerId;
+                        } else if (clickedEnemyId != 0) {
+                            // Chấm Enemy chỉ để xem, chưa có lệnh
+                            if (!shiftHeld) {
+                                for (auto& u : m_worldSim.getUnits()) {
+                                    u.setSelected(false);
+                                }
+                            }
+                            m_inspectedUnitId = clickedEnemyId;
+                        } else {
+                            // Click chuột trái vào chỗ trống: bỏ chọn
+                            if (!shiftHeld) {
+                                for (auto& u : m_worldSim.getUnits()) {
+                                    u.setSelected(false);
+                                }
+                                m_inspectedUnitId = 0;
+                            }
+                        }
+                    }
+                    // B. Kéo thả hình chữ nhật chọn vùng
+                    else {
+                        int minX = std::min(m_boxStartX, m_boxCurrentX);
+                        int maxX = std::max(m_boxStartX, m_boxCurrentX);
+                        int minY = std::min(m_boxStartY, m_boxCurrentY);
+                        int maxY = std::max(m_boxStartY, m_boxCurrentY);
+
+                        uint32_t firstSelected = 0;
+                        for (auto& u : m_worldSim.getUnits()) {
+                            if (u.isDead() || u.getFaction() != sim::Faction::Player) continue;
+
+                            float wx = static_cast<float>(u.getPosX()) * pixelScale / 1000.0f;
+                            float wy = static_cast<float>(u.getPosY()) * pixelScale / 1000.0f;
+                            float sx = m_camera.worldToScreenX(wx);
+                            float sy = m_camera.worldToScreenY(wy);
+
+                            if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
+                                u.setSelected(true);
+                                if (firstSelected == 0) firstSelected = u.getId();
+                            } else if (!shiftHeld) {
+                                u.setSelected(false);
+                            }
+                        }
+                        if (firstSelected != 0) {
+                            m_inspectedUnitId = firstSelected;
+                        }
+                    }
+                }
             }
         } else if (event.type == SDL_MOUSEMOTION) {
             // Khi đang kéo chuột trên Minimap, liên tục cập nhật vị trí camera
             if (m_isDraggingMinimap) {
                 m_mapRenderer.handleMinimapClick(event.motion.x, event.motion.y, winW, winH, m_worldMap, m_camera);
+            } else if (m_isBoxSelecting) {
+                m_boxCurrentX = event.motion.x;
+                m_boxCurrentY = event.motion.y;
             }
         }
 
@@ -267,8 +369,30 @@ void GameApp::render() {
     // 2. Vẽ bản đồ thế giới tô màu theo địa hình và Minimap ở góc dưới phải
     m_mapRenderer.render(renderer, m_worldMap, m_camera, winW, winH);
 
-    // 2b. Vẽ các đơn vị quân đội theo phe (M3)
+    // 2b. Vẽ các đơn vị quân đội theo phe và đường đi (M4)
     m_unitRenderer.render(renderer, m_worldSim.getUnits(), m_camera, winW, winH, m_worldSim.getConfig().getTilePixels());
+
+    // 2c. Vẽ khung chữ nhật kéo thả chọn quân nếu đang drag
+    if (m_isBoxSelecting) {
+        m_unitRenderer.renderSelectionBox(renderer, m_boxStartX, m_boxStartY, m_boxCurrentX, m_boxCurrentY);
+    }
+
+    // 2d. Vẽ bảng thông tin nhỏ nếu có đơn vị đang chọn hoặc đang xem (M4)
+    const sim::Unit* inspected = nullptr;
+    if (m_inspectedUnitId != 0) {
+        inspected = m_worldSim.getUnitById(m_inspectedUnitId);
+    }
+    if (!inspected || inspected->isDead()) {
+        for (const auto& u : m_worldSim.getUnits()) {
+            if (u.isSelected()) {
+                inspected = &u;
+                break;
+            }
+        }
+    }
+    if (inspected && !inspected->isDead()) {
+        m_unitRenderer.renderInfoPanel(renderer, *inspected, m_textRenderer, winW, winH);
+    }
 
     // 3. Hiển thị FPS và thông tin Seed ở góc trên bên trái
     char infoBuffer[128];

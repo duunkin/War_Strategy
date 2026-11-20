@@ -309,10 +309,45 @@ void WorldSim::tick() {
     // 1. Áp dụng các lệnh từ hàng đợi ở đầu tick
     for (const auto& cmd : m_commandQueue) {
         if (cmd.type == CommandType::Move) {
+            std::vector<Unit*> targetUnits;
             for (uint32_t uid : cmd.move.unitIds) {
                 Unit* unit = getUnitById(uid);
                 if (unit && !unit->isDead()) {
-                    unit->setDestinationTile(cmd.move.targetTileX, cmd.move.targetTileY);
+                    targetUnits.push_back(unit);
+                }
+            }
+
+            if (!targetUnits.empty()) {
+                TileCoord centerTarget{cmd.move.targetTileX, cmd.move.targetTileY};
+
+                // Rải các ô đích quanh centerTarget cho số lượng đơn vị
+                auto dispersedTargets = Pathfinder::disperseDestinations(
+                    m_map, m_config, targetUnits[0]->getDomain(), targetUnits[0]->getType(),
+                    centerTarget, targetUnits.size()
+                );
+
+                for (size_t i = 0; i < targetUnits.size(); ++i) {
+                    Unit* unit = targetUnits[i];
+                    TileCoord assignedTarget = (i < dispersedTargets.size()) ? dispersedTargets[i] : centerTarget;
+
+                    DetailedTerrainType dtAssigned = m_config.classifyTerrain(m_map, assignedTarget.x, assignedTarget.y);
+                    if (!m_config.isPassable(dtAssigned, unit->getDomain(), unit->getType())) {
+                        auto specificDispersed = Pathfinder::disperseDestinations(
+                            m_map, m_config, unit->getDomain(), unit->getType(), centerTarget, 1
+                        );
+                        if (!specificDispersed.empty()) {
+                            assignedTarget = specificDispersed[0];
+                        }
+                    }
+
+                    TileCoord startCoord{unit->getTileX(), unit->getTileY()};
+                    PathResult path = Pathfinder::findPath(
+                        m_map, m_config, unit->getDomain(), unit->getType(), startCoord, assignedTarget
+                    );
+
+                    if (path.found) {
+                        unit->setPath(path);
+                    }
                 }
             }
         }

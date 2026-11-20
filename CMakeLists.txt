@@ -63,7 +63,18 @@ add_executable(test_units
         src/sim/units/Unit.cpp
         src/sim/WorldSim.cpp
         src/sim/map/WorldMap.cpp
+        src/sim/pathfinding/Pathfinder.cpp
 )
 target_include_directories(test_units PRIVATE src)
 target_link_libraries(test_units PRIVATE nlohmann_json::nlohmann_json)
 add_test(NAME test_units COMMAND test_units)
+
+add_executable(test_pathfinding
+        tests/test_pathfinding.cpp
+        src/sim/config/SimConfig.cpp
+        src/sim/map/WorldMap.cpp
+        src/sim/pathfinding/Pathfinder.cpp
+)
+target_include_directories(test_pathfinding PRIVATE src)
+target_link_libraries(test_pathfinding PRIVATE nlohmann_json::nlohmann_json)
+add_test(NAME test_pathfinding COMMAND test_pathfinding)

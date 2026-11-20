@@ -75,6 +75,26 @@ void Unit::clearDestination() {
     m_moveAccumulator = 0;
 }
 
+void Unit::setPath(const PathResult& path) {
+    m_waypoints = path.waypoints;
+    m_currentWaypointIdx = 0;
+    m_destinationAdjusted = path.adjusted;
+    m_finalTargetTile = path.finalTarget;
+
+    if (!m_waypoints.empty()) {
+        setDestinationTile(m_waypoints[0].x, m_waypoints[0].y);
+    } else {
+        clearDestination();
+    }
+}
+
+void Unit::clearPath() {
+    m_waypoints.clear();
+    m_currentWaypointIdx = 0;
+    m_destinationAdjusted = false;
+    clearDestination();
+}
+
 void Unit::stepTowardsDestination(int stepMilli) {
     if (!m_hasDestination || stepMilli <= 0) {
         return;
@@ -86,17 +106,33 @@ void Unit::stepTowardsDestination(int stepMilli) {
     // Khoảng cách Euclid bình phương
     uint64_t distSq = static_cast<uint64_t>(dx * dx + dy * dy);
     if (distSq == 0) {
-        m_hasDestination = false;
+        // Đã đến điểm đích hiện tại
+        if (m_currentWaypointIdx + 1 < m_waypoints.size()) {
+            m_currentWaypointIdx++;
+            setDestinationTile(m_waypoints[m_currentWaypointIdx].x, m_waypoints[m_currentWaypointIdx].y);
+        } else {
+            m_hasDestination = false;
+            m_waypoints.clear();
+            m_currentWaypointIdx = 0;
+        }
         return;
     }
 
     uint64_t dist = integerSqrt64(distSq);
 
-    // Nếu khoảng cách còn lại nhỏ hơn hoặc bằng bước đi, đơn vị đến đích
+    // Nếu khoảng cách còn lại nhỏ hơn hoặc bằng bước đi, đơn vị đến waypoint hiện tại
     if (dist <= static_cast<uint64_t>(stepMilli)) {
         m_posX = m_destX;
         m_posY = m_destY;
-        m_hasDestination = false;
+        // Chuyển sang waypoint tiếp theo nếu có
+        if (m_currentWaypointIdx + 1 < m_waypoints.size()) {
+            m_currentWaypointIdx++;
+            setDestinationTile(m_waypoints[m_currentWaypointIdx].x, m_waypoints[m_currentWaypointIdx].y);
+        } else {
+            m_hasDestination = false;
+            m_waypoints.clear();
+            m_currentWaypointIdx = 0;
+        }
         return;
     }
 

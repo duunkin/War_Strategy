@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../config/SimConfig.hpp"
+#include "../pathfinding/Pathfinder.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -19,12 +20,10 @@ enum class Faction : uint8_t {
 /**
  * @brief Lớp Unit đại diện cho một chấm / khối quân trên bản đồ.
  *
- * Theo quy tắc chuẩn:
- * - 1 chấm là một khối quân chung.
- * - Máu chấm = số đơn vị x máu mỗi đơn vị (hpPerUnit).
- * - Sát thương tăng theo quân số, thương vong giảm số đơn vị (N_alive = ceil(hp / hpPerUnit)).
- * - Khi máu về 0 (hoặc số đơn vị về 0) thì chấm mất (chết).
- * - Tọa độ vị trí tính bằng mili-ô (1 ô = 1000 mili-ô).
+ * Mốc M4 bổ sung:
+ * - Quản lý lộ trình tìm đường A* qua các waypoints.
+ * - Đích đến thực tế và cờ đánh dấu đích đã được điều chỉnh.
+ * - Di chuyển theo từng waypoint với tốc độ theo địa hình ô đang đứng.
  */
 class Unit {
 public:
@@ -85,6 +84,15 @@ public:
     void setDestinationMilli(int32_t destX, int32_t destY);
     void clearDestination();
 
+    // Quản lý đường đi và waypoint (M4)
+    void setPath(const PathResult& path);
+    void clearPath();
+    [[nodiscard]] bool hasPath() const { return !m_waypoints.empty() && m_currentWaypointIdx < m_waypoints.size(); }
+    [[nodiscard]] const std::vector<TileCoord>& getWaypoints() const { return m_waypoints; }
+    [[nodiscard]] size_t getCurrentWaypointIndex() const { return m_currentWaypointIdx; }
+    [[nodiscard]] bool isDestinationAdjusted() const { return m_destinationAdjusted; }
+    [[nodiscard]] TileCoord getFinalTargetTile() const { return m_finalTargetTile; }
+
     // Di chuyển thẳng về phía đích một đoạn stepMilli (thuần số nguyên)
     void stepTowardsDestination(int stepMilli);
 
@@ -132,6 +140,12 @@ private:
     bool        m_canTargetSea{false};
     float       m_stealthRevealRangeTiles{0.0f};
     int         m_iconSizeTiles{1};
+
+    // Waypoints và điều chỉnh đích (M4)
+    std::vector<TileCoord> m_waypoints;
+    size_t                 m_currentWaypointIdx{0};
+    bool                   m_destinationAdjusted{false};
+    TileCoord              m_finalTargetTile{0, 0};
 };
 
 } // namespace sim

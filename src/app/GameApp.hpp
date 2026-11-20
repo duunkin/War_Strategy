@@ -68,6 +68,14 @@ private:
     int   m_frameCount{0};
     float m_fpsAccumulator{0.0f};
     float m_currentFPS{0.0f};
+
+    // Trạng thái chọn quân chuột (M4)
+    bool     m_isBoxSelecting{false};
+    int      m_boxStartX{0};
+    int      m_boxStartY{0};
+    int      m_boxCurrentX{0};
+    int      m_boxCurrentY{0};
+    uint32_t m_inspectedUnitId{0};
 };
 
 } // namespace app
