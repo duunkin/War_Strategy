@@ -59,6 +59,8 @@ add_test(NAME test_mapgen COMMAND test_mapgen)
 
 add_executable(test_units
         tests/test_units.cpp
+        src/mapgen/MapGenerator.cpp
+        src/mapgen/SimplexNoise.cpp
         src/sim/config/SimConfig.cpp
         src/sim/units/Unit.cpp
         src/sim/WorldSim.cpp

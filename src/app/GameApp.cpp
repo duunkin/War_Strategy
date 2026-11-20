@@ -29,6 +29,16 @@ void GameApp::regenerateMap(uint64_t seed) {
     m_mapGenerator.generate(m_worldMap, m_currentSeed, m_mapConfig);
     m_worldSim.spawnPlayerDivisions(m_currentSeed);
     m_enemyAI.reset(m_currentSeed);
+
+    // Căn camera ban đầu tập trung vào khu vực spawn trung điểm cạnh trái của Player
+    int tileSize = m_worldMap.getTileSize();
+    float playerSpawnPixelX = static_cast<float>(m_worldSim.getPlayerSpawnAnchorX() * tileSize);
+    float playerSpawnPixelY = static_cast<float>(m_worldSim.getPlayerSpawnAnchorY() * tileSize);
+    float camStartX = playerSpawnPixelX - static_cast<float>(m_window.getWidth()) * 0.5f;
+    float camStartY = playerSpawnPixelY - static_cast<float>(m_window.getHeight()) * 0.5f;
+    m_camera.setPosition(camStartX, camStartY);
+    m_camera.clampToBounds(m_window.getWidth(), m_window.getHeight(), m_worldMap.getWorldWidth(), m_worldMap.getWorldHeight());
+
     if (m_window.getSDLRenderer()) {
         sim::Faction viewingFaction = m_worldSim.getControlledFaction();
         m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(viewingFaction), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
@@ -73,20 +83,12 @@ bool GameApp::init() {
     };
     m_textRenderer.init(fontCandidates, 18);
 
-    // 4. Nạp cấu hình sim và sinh bản đồ lần đầu với seed ban đầu
+    // 4. Nạp cấu hình sim và sinh bản đồ lần đầu với seed ban đầu (regenerateMap tự căn camera vào quân Player)
     if (!m_worldSim.loadConfig()) {
         std::cerr << "[GameApp] LOI: Khong the nap cau hinh game_config.json!" << std::endl;
         return false;
     }
     regenerateMap(m_currentSeed);
-
-    // 5. Khởi tạo vị trí camera vào trung tâm bản đồ
-    int worldW = m_worldMap.getWorldWidth();
-    int worldH = m_worldMap.getWorldHeight();
-    float startX = (static_cast<float>(worldW) - initialWidth) * 0.5f;
-    float startY = (static_cast<float>(worldH) - initialHeight) * 0.5f;
-    m_camera.setPosition(startX, startY);
-    m_camera.clampToBounds(initialWidth, initialHeight, worldW, worldH);
 
     m_running = true;
     return true;

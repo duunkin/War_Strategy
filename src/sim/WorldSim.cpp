@@ -44,8 +44,7 @@ void WorldSim::spawnDivisions(uint64_t seed) {
     int width = m_map.getWidth();
     int height = m_map.getHeight();
     int halfWidth = width / 2; // 64
-
-    mapgen::FastRng rng(seed ^ 0xFEEDFACECAFEBEEFULL);
+    int midY = height / 2;     // 48
 
     struct Coord {
         int x{0};
@@ -61,8 +60,8 @@ void WorldSim::spawnDivisions(uint64_t seed) {
 
     // Danh sách 30 đơn vị mỗi bên theo đúng JSON
     const std::vector<UnitType> roster = {
-        UnitType::Commander,    // 1 Commander
-        UnitType::Infantry,     // 10 Infantry
+        UnitType::Commander,    // 0: 1 Commander
+        UnitType::Infantry,     // 1..10: 10 Infantry
         UnitType::Infantry,
         UnitType::Infantry,
         UnitType::Infantry,
@@ -72,206 +71,276 @@ void WorldSim::spawnDivisions(uint64_t seed) {
         UnitType::Infantry,
         UnitType::Infantry,
         UnitType::Infantry,
-        UnitType::Leopard2A,    // 2 Leopard 2A
+        UnitType::Leopard2A,    // 11..12: 2 Leopard 2A
         UnitType::Leopard2A,
-        UnitType::T14Armata,    // 2 T-14 Armata
+        UnitType::T14Armata,    // 13..14: 2 T-14 Armata
         UnitType::T14Armata,
-        UnitType::Puma,         // 4 Puma
+        UnitType::Puma,         // 15..18: 4 Puma
         UnitType::Puma,
         UnitType::Puma,
         UnitType::Puma,
-        UnitType::Caesar,       // 2 Caesar
+        UnitType::Caesar,       // 19..20: 2 Caesar
         UnitType::Caesar,
-        UnitType::Gepard,       // 2 Gepard
+        UnitType::Gepard,       // 21..22: 2 Gepard
         UnitType::Gepard,
-        UnitType::Su57,         // 2 Su-57
+        UnitType::Su57,         // 23..24: 2 Su-57
         UnitType::Su57,
-        UnitType::B2Spirit,     // 1 B-2 Spirit
-        UnitType::Mogami,       // 2 Mogami (SEA)
+        UnitType::B2Spirit,     // 25: 1 B-2 Spirit
+        UnitType::Mogami,       // 26..27: 2 Mogami (SEA)
         UnitType::Mogami,
-        UnitType::Asagiri,      // 2 Asagiri (SEA)
+        UnitType::Asagiri,      // 28..29: 2 Asagiri (SEA)
         UnitType::Asagiri
     };
 
-    // 1. Phân loại 26 đơn vị trên bộ/trên không và 4 tàu biển
-    std::vector<UnitType> landUnits;
-    std::vector<UnitType> seaUnits;
-    for (UnitType t : roster) {
-        const auto* cfg = m_config.getUnitConfig(t);
-        UnitDomain domain = cfg ? cfg->domain : UnitDomain::Land;
-        if (domain == UnitDomain::Sea) {
-            seaUnits.push_back(t);
-        } else {
-            landUnits.push_back(t);
-        }
-    }
+    // Bố cục đội hình tương đối (relX, relY) theo điểm neo bờ biển (anchorX, anchorY)
+    // Đối với Player (bên Trái): relX > 0 là tiến về phía Đông (hướng tâm bản đồ).
+    // - Tuyến sau (Rearguard, sát bờ): Commander, Pháo Caesar, Pháo Gepard
+    // - Tuyến giữa (Midline): Tăng hạng nặng Leopard 2A, T-14 Armata, Bộ binh (10 sư đoàn)
+    // - Tuyến trước (Vanguard): 4 xe trinh sát Puma
+    // - Thủy quân (Sea): ngoài biển sau lưng bờ (relX < 0)
+    // - Không quân (Air): không phận phía trên điểm neo (relY < 0)
+    struct FormationOffset {
+        int relX{0};
+        int relY{0};
+    };
 
-    // 2. Tìm 26 ô đất liền hợp lệ cho Player ở phía Tây (x < halfWidth)
-    std::vector<Coord> playerLandTiles;
-    std::unordered_set<Coord, CoordHash> occupiedPlayer;
+    const std::vector<FormationOffset> formationOffsets = {
+        // 0: Commander (Tuyến sau, trung tâm đội hình)
+        {0, 0},
+        // 1..10: 10 Infantry (Tuyến giữa bộ binh, 2 hàng dọc 5 sư đoàn mỗi hàng)
+        {3, -2}, {3, -1}, {3, 0}, {3, 1}, {3, 2},
+        {4, -2}, {4, -1}, {4, 0}, {4, 1}, {4, 2},
+        // 11..12: 2 Leopard 2A (Tăng hạng nặng ở cột 2)
+        {2, -1}, {2, -2},
+        // 13..14: 2 T-14 Armata (Tăng hạng trung ở cột 2)
+        {2, 1}, {2, 2},
+        // 15..18: 4 Puma (Xe trinh sát cơ động ở cột tiền tuyến 5)
+        {5, -2}, {5, -1}, {5, 1}, {5, 2},
+        // 19..20: 2 Caesar (Pháo tầm xa ở tuyến sau, hai bên Commander)
+        {0, -2}, {0, 2},
+        // 21..22: 2 Gepard (Phòng không bảo vệ tuyến sau)
+        {0, -3}, {0, 3},
+        // 23..24: 2 Su-57 (Không quân tiêm kích)
+        {2, -4}, {3, -4},
+        // 25: 1 B-2 Spirit (Oanh tạc cơ)
+        {1, -4},
+        // 26..27: 2 Mogami (Thủy quân ngoài biển phía sau bờ)
+        {-3, -1}, {-3, -2},
+        // 28..29: 2 Asagiri (Thủy quân ngoài biển phía sau bờ)
+        {-3, 1}, {-3, 2}
+    };
 
-    // Tìm điểm neo đất bằng (Plain) ở Tây
-    for (int attempt = 0; attempt < 500 && playerLandTiles.size() < landUnits.size(); ++attempt) {
-        int anchorX = rng.range(8, halfWidth - 8);
-        int anchorY = rng.range(12, height - 13);
-
-        DetailedTerrainType dt = m_config.classifyTerrain(m_map, anchorX, anchorY);
-        if (dt != DetailedTerrainType::Plain) {
-            continue;
-        }
-
+    // 1. Kiểm tra kết nối với khối lục địa chính (tránh đảo nhỏ cô lập giữa biển)
+    auto isConnectedToMainLand = [&](int startX, int startY, int minTiles = 25) -> bool {
         std::vector<bool> visited(static_cast<size_t>(width * height), false);
-        std::queue<Coord> queue;
-        std::vector<Coord> cluster;
+        std::queue<Coord> q;
+        q.push({startX, startY});
+        visited[static_cast<size_t>(startY * width + startX)] = true;
+        int count = 0;
 
-        visited[static_cast<size_t>(anchorY * width + anchorX)] = true;
-        queue.push({anchorX, anchorY});
-        cluster.push_back({anchorX, anchorY});
+        constexpr int ddx[4] = {1, -1, 0, 0};
+        constexpr int ddy[4] = {0, 0, 1, -1};
 
-        constexpr int dx[4] = {0, 1, 0, -1};
-        constexpr int dy[4] = {-1, 0, 1, 0};
+        while (!q.empty()) {
+            Coord c = q.front();
+            q.pop();
+            count++;
+            if (count >= minTiles) return true;
 
-        while (!queue.empty() && cluster.size() < landUnits.size()) {
-            Coord cur = queue.front();
-            queue.pop();
-
-            for (int dir = 0; dir < 4; ++dir) {
-                int nx = cur.x + dx[dir];
-                int ny = cur.y + dy[dir];
-
-                if (nx < 2 || nx >= halfWidth - 2 || ny < 2 || ny >= height - 2) continue;
+            for (int i = 0; i < 4; ++i) {
+                int nx = c.x + ddx[i];
+                int ny = c.y + ddy[i];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
                 size_t idx = static_cast<size_t>(ny * width + nx);
                 if (visited[idx]) continue;
                 visited[idx] = true;
 
-                DetailedTerrainType ndt = m_config.classifyTerrain(m_map, nx, ny);
-                // Ô đất liền đi được bởi bộ binh và xe (Plain/Forest/Hill)
-                if (m_config.isPassable(ndt, UnitDomain::Land, UnitType::Infantry) &&
-                    m_config.isPassable(ndt, UnitDomain::Land, UnitType::Leopard2A)) {
-                    cluster.push_back({nx, ny});
-                    queue.push({nx, ny});
-                    if (cluster.size() >= landUnits.size()) break;
+                DetailedTerrainType dt = m_config.classifyTerrain(m_map, nx, ny);
+                if (m_config.isPassable(dt, UnitDomain::Land, UnitType::Infantry) &&
+                    m_config.isPassable(dt, UnitDomain::Land, UnitType::Leopard2A)) {
+                    q.push({nx, ny});
                 }
             }
         }
+        return count >= minTiles;
+    };
 
-        if (cluster.size() >= landUnits.size()) {
-            playerLandTiles = std::move(cluster);
-            break;
-        }
-    }
-
-    // Nếu BFS chưa đủ, quét tuyến tính trên nửa Tây
-    if (playerLandTiles.size() < landUnits.size()) {
-        playerLandTiles.clear();
-        for (int y = 8; y < height - 8 && playerLandTiles.size() < landUnits.size(); ++y) {
-            for (int x = 6; x < halfWidth - 2 && playerLandTiles.size() < landUnits.size(); ++x) {
-                DetailedTerrainType ndt = m_config.classifyTerrain(m_map, x, y);
-                if (m_config.isPassable(ndt, UnitDomain::Land, UnitType::Infantry) &&
-                    m_config.isPassable(ndt, UnitDomain::Land, UnitType::Leopard2A)) {
-                    playerLandTiles.push_back({x, y});
+    // 2. Tìm điểm bờ biển phía Tây (Player)
+    auto findCoastAnchorWest = [&](int targetY) -> Coord {
+        for (int x = 2; x < halfWidth - 5; ++x) {
+            DetailedTerrainType dt = m_config.classifyTerrain(m_map, x, targetY);
+            if (m_config.isPassable(dt, UnitDomain::Land, UnitType::Infantry) &&
+                m_config.isPassable(dt, UnitDomain::Land, UnitType::Leopard2A)) {
+                if (isConnectedToMainLand(x, targetY, 25)) {
+                    return {x, targetY};
                 }
             }
         }
+        return {-1, -1};
+    };
+
+    // 3. Tìm điểm bờ biển phía Đông (Enemy)
+    auto findCoastAnchorEast = [&](int targetY) -> Coord {
+        for (int x = width - 3; x >= halfWidth + 5; --x) {
+            DetailedTerrainType dt = m_config.classifyTerrain(m_map, x, targetY);
+            if (m_config.isPassable(dt, UnitDomain::Land, UnitType::Infantry) &&
+                m_config.isPassable(dt, UnitDomain::Land, UnitType::Leopard2A)) {
+                if (isConnectedToMainLand(x, targetY, 25)) {
+                    return {x, targetY};
+                }
+            }
+        }
+        return {-1, -1};
+    };
+
+    Coord playerAnchor{-1, -1};
+    Coord enemyAnchor{-1, -1};
+
+    // Ưu tiên 1: Tìm hàng cy chung gần midY nhất mà cả 2 bên đều có bờ biển đẹp
+    for (int absDy = 0; absDy < height / 2; ++absDy) {
+        int candYs[2] = {midY + absDy, midY - absDy};
+        int countCand = (absDy == 0) ? 1 : 2;
+
+        for (int i = 0; i < countCand; ++i) {
+            int cy = candYs[i];
+            if (cy < 4 || cy >= height - 4) continue;
+
+            Coord pCand = findCoastAnchorWest(cy);
+            Coord eCand = findCoastAnchorEast(cy);
+
+            if (pCand.x != -1 && eCand.x != -1) {
+                playerAnchor = pCand;
+                enemyAnchor = eCand;
+                break;
+            }
+        }
+        if (playerAnchor.x != -1) break;
     }
 
-    for (const auto& c : playerLandTiles) {
-        occupiedPlayer.insert(c);
+    // Ưu tiên 2: Tìm độc lập hàng gần midY nhất cho từng bên nếu không có cy chung
+    if (playerAnchor.x == -1) {
+        for (int absDy = 0; absDy < height / 2; ++absDy) {
+            int candYs[2] = {midY + absDy, midY - absDy};
+            int countCand = (absDy == 0) ? 1 : 2;
+            for (int i = 0; i < countCand; ++i) {
+                int cy = candYs[i];
+                if (cy < 4 || cy >= height - 4) continue;
+                Coord pCand = findCoastAnchorWest(cy);
+                if (pCand.x != -1) { playerAnchor = pCand; break; }
+            }
+            if (playerAnchor.x != -1) break;
+        }
     }
 
-    // 3. Tìm 4 ô biển cho tàu Player ở phía Tây (x < halfWidth)
-    std::vector<Coord> playerSeaTiles;
-    for (int y = 4; y < height - 4 && playerSeaTiles.size() < seaUnits.size(); ++y) {
-        for (int x = 2; x < halfWidth && playerSeaTiles.size() < seaUnits.size(); ++x) {
+    if (enemyAnchor.x == -1) {
+        for (int absDy = 0; absDy < height / 2; ++absDy) {
+            int candYs[2] = {midY + absDy, midY - absDy};
+            int countCand = (absDy == 0) ? 1 : 2;
+            for (int i = 0; i < countCand; ++i) {
+                int cy = candYs[i];
+                if (cy < 4 || cy >= height - 4) continue;
+                Coord eCand = findCoastAnchorEast(cy);
+                if (eCand.x != -1) { enemyAnchor = eCand; break; }
+            }
+            if (enemyAnchor.x != -1) break;
+        }
+    }
+
+    // Fallback an toàn tuyệt đối nếu bản đồ dị biệt
+    if (playerAnchor.x == -1) playerAnchor = {10, midY};
+    if (enemyAnchor.x == -1) enemyAnchor = {width - 11, midY};
+
+    m_playerSpawnAnchorX = playerAnchor.x;
+    m_playerSpawnAnchorY = playerAnchor.y;
+    m_enemySpawnAnchorX = enemyAnchor.x;
+    m_enemySpawnAnchorY = enemyAnchor.y;
+
+    // 4. Hàm tìm kiếm ô hợp lệ gần vị trí lý tưởng nhất
+    auto findBestTile = [&](int idealX, int idealY, UnitDomain domain, UnitType type,
+                            std::unordered_set<Coord, CoordHash>& occupied, bool isEastSide) -> Coord {
+        int minX = isEastSide ? halfWidth : 0;
+        int maxX = isEastSide ? (width - 1) : (halfWidth - 1);
+
+        auto isValid = [&](int x, int y) {
+            if (x < minX || x > maxX || y < 1 || y >= height - 1) return false;
+            if (occupied.find(Coord{x, y}) != occupied.end()) return false;
             DetailedTerrainType dt = m_config.classifyTerrain(m_map, x, y);
-            if (m_config.isPassable(dt, UnitDomain::Sea, UnitType::Mogami)) {
-                Coord c{x, y};
-                if (occupiedPlayer.find(c) == occupiedPlayer.end()) {
-                    playerSeaTiles.push_back(c);
-                    occupiedPlayer.insert(c);
-                }
-            }
-        }
-    }
+            return m_config.isPassable(dt, domain, type);
+        };
 
-    // Ghép toàn bộ tọa độ Player theo thứ tự roster
-    std::vector<Coord> playerTiles;
-    size_t landIdx = 0;
-    size_t seaIdx = 0;
-    for (UnitType t : roster) {
-        const auto* cfg = m_config.getUnitConfig(t);
-        UnitDomain domain = cfg ? cfg->domain : UnitDomain::Land;
-        if (domain == UnitDomain::Sea) {
-            if (seaIdx < playerSeaTiles.size()) {
-                playerTiles.push_back(playerSeaTiles[seaIdx++]);
-            } else {
-                playerTiles.push_back({2, 10});
-            }
-        } else {
-            if (landIdx < playerLandTiles.size()) {
-                playerTiles.push_back(playerLandTiles[landIdx++]);
-            } else {
-                playerTiles.push_back({10, 10});
-            }
-        }
-    }
-
-    // 4. Tìm tọa độ đối xứng gương cho Enemy ở phía Đông (x >= halfWidth)
-    std::vector<Coord> enemyTiles;
-    std::unordered_set<Coord, CoordHash> occupiedEnemy;
-
-    auto findNearestPassableEast = [&](int idealX, int idealY, UnitDomain domain, UnitType type) -> Coord {
-        // Kiểm tra ngay ô đối xứng gương
-        if (idealX >= halfWidth && idealX < width && idealY >= 0 && idealY < height) {
-            Coord cand{idealX, idealY};
-            DetailedTerrainType dt = m_config.classifyTerrain(m_map, idealX, idealY);
-            if (m_config.isPassable(dt, domain, type) && occupiedEnemy.find(cand) == occupiedEnemy.end()) {
-                return cand;
-            }
+        if (isValid(idealX, idealY)) {
+            return Coord{idealX, idealY};
         }
 
-        // Tìm kiếm xoắn ốc / BFS mở rộng từ idealX, idealY trong phạm vi nửa Đông
-        for (int radius = 1; radius < 40; ++radius) {
-            for (int dy = -radius; dy <= radius; ++dy) {
-                for (int dx = -radius; dx <= radius; ++dx) {
-                    if (std::abs(dx) != radius && std::abs(dy) != radius) continue;
+        // Tìm kiếm xoắn ốc quanh idealX, idealY với bán kính tăng dần
+        for (int r = 1; r < 35; ++r) {
+            int bestX = -1;
+            int bestY = -1;
+            int bestDistSq = std::numeric_limits<int>::max();
+
+            for (int dy = -r; dy <= r; ++dy) {
+                for (int dx = -r; dx <= r; ++dx) {
+                    if (std::abs(dx) != r && std::abs(dy) != r) continue;
                     int nx = idealX + dx;
                     int ny = idealY + dy;
-                    if (nx >= halfWidth && nx < width && ny >= 0 && ny < height) {
-                        Coord cand{nx, ny};
-                        if (occupiedEnemy.find(cand) != occupiedEnemy.end()) continue;
-                        DetailedTerrainType dt = m_config.classifyTerrain(m_map, nx, ny);
-                        if (m_config.isPassable(dt, domain, type)) {
-                            return cand;
+                    if (isValid(nx, ny)) {
+                        int dSq = dx * dx + dy * dy;
+                        if (dSq < bestDistSq) {
+                            bestDistSq = dSq;
+                            bestX = nx;
+                            bestY = ny;
                         }
                     }
                 }
             }
+            if (bestX != -1) {
+                return Coord{bestX, bestY};
+            }
         }
 
-        // Fallback quét tuyến tính nửa Đông
-        for (int ny = 0; ny < height; ++ny) {
-            for (int nx = halfWidth; nx < width; ++nx) {
-                Coord cand{nx, ny};
-                if (occupiedEnemy.find(cand) != occupiedEnemy.end()) continue;
-                DetailedTerrainType dt = m_config.classifyTerrain(m_map, nx, ny);
-                if (m_config.isPassable(dt, domain, type)) {
-                    return cand;
+        // Fallback quét toàn bộ nửa sân
+        for (int y = 1; y < height - 1; ++y) {
+            for (int x = minX; x <= maxX; ++x) {
+                if (isValid(x, y)) {
+                    return Coord{x, y};
                 }
             }
         }
         return Coord{idealX, idealY};
     };
 
+    // 5. Xác định tọa độ 30 đơn vị cho Player
+    std::vector<Coord> playerTiles;
+    std::unordered_set<Coord, CoordHash> occupiedPlayer;
+
     for (size_t i = 0; i < roster.size(); ++i) {
         UnitType t = roster[i];
         const auto* cfg = m_config.getUnitConfig(t);
         UnitDomain domain = cfg ? cfg->domain : UnitDomain::Land;
-        int idealX = width - 1 - playerTiles[i].x;
-        int idealY = playerTiles[i].y;
-        Coord eCoord = findNearestPassableEast(idealX, idealY, domain, t);
-        enemyTiles.push_back(eCoord);
-        occupiedEnemy.insert(eCoord);
+
+        int idealX = playerAnchor.x + formationOffsets[i].relX;
+        int idealY = playerAnchor.y + formationOffsets[i].relY;
+
+        Coord assigned = findBestTile(idealX, idealY, domain, t, occupiedPlayer, false);
+        playerTiles.push_back(assigned);
+        occupiedPlayer.insert(assigned);
+    }
+
+    // 6. Xác định tọa độ 30 đơn vị cho Enemy (đối xứng gương qua trung điểm bờ Đông)
+    std::vector<Coord> enemyTiles;
+    std::unordered_set<Coord, CoordHash> occupiedEnemy;
+
+    for (size_t i = 0; i < roster.size(); ++i) {
+        UnitType t = roster[i];
+        const auto* cfg = m_config.getUnitConfig(t);
+        UnitDomain domain = cfg ? cfg->domain : UnitDomain::Land;
+
+        int idealX = enemyAnchor.x - formationOffsets[i].relX;
+        int idealY = enemyAnchor.y + formationOffsets[i].relY;
+
+        Coord assigned = findBestTile(idealX, idealY, domain, t, occupiedEnemy, true);
+        enemyTiles.push_back(assigned);
+        occupiedEnemy.insert(assigned);
     }
 
     // 5. Khởi tạo các đơn vị Unit cho Player (ID: 1..30)

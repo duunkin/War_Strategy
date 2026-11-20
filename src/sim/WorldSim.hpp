@@ -66,6 +66,12 @@ public:
         m_controlledFaction = (m_controlledFaction == Faction::Player) ? Faction::Enemy : Faction::Player;
     }
 
+    // Tọa độ trung điểm neo xuất hiện quân (Spawn Anchors)
+    [[nodiscard]] int getPlayerSpawnAnchorX() const { return m_playerSpawnAnchorX; }
+    [[nodiscard]] int getPlayerSpawnAnchorY() const { return m_playerSpawnAnchorY; }
+    [[nodiscard]] int getEnemySpawnAnchorX() const { return m_enemySpawnAnchorX; }
+    [[nodiscard]] int getEnemySpawnAnchorY() const { return m_enemySpawnAnchorY; }
+
     // Sương mù chiến tranh & Tầm nhìn (M6)
     void updateVision();
     void initElevationGrid();
@@ -99,6 +105,12 @@ private:
 
     // Phe đang được điều khiển (Mặc định: Player, F1 đổi sang Enemy để debug)
     Faction              m_controlledFaction{Faction::Player};
+
+    // Tọa độ trung điểm neo xuất hiện quân 2 bên bờ biển
+    int                  m_playerSpawnAnchorX{10};
+    int                  m_playerSpawnAnchorY{48};
+    int                  m_enemySpawnAnchorX{118};
+    int                  m_enemySpawnAnchorY{48};
 
     // Sương mù chiến tranh cho từng phe (M6)
     std::vector<uint8_t> m_elevationGrid;
