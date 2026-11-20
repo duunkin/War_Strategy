@@ -10,6 +10,8 @@
 #include "../mapgen/MapGenerator.hpp"
 #include "../mapgen/MapGenConfig.hpp"
 #include "../ai/TacticalAI.hpp"
+#include "../ai/AiParams.hpp"
+#include "../ai/AiTelemetry.hpp"
 #include "../replay/Replay.hpp"
 
 #include <cstdint>
@@ -33,6 +35,9 @@ public:
 
     // Cấu hình Replay (M8)
     void setReplayFile(const std::string& path) { m_replayPath = path; }
+
+    // Cấu hình AI Params nạp từ file bên ngoài (M9)
+    void setAiParamsFile(const std::string& path) { m_aiParamsPath = path; }
 
     // Tạo một seed ngẫu nhiên từ đồng hồ hệ thống và bộ sinh số
     uint64_t generateRandomSeed();
@@ -86,9 +91,11 @@ private:
     // TODO: [DEBUG ONLY - F2] Xóa chế độ tắt sương mù này khi hoàn thiện game
     bool     m_debugFogDisabled{false};
 
-    // AI chiến thuật phe Enemy (M7)
+    // AI chiến thuật phe Enemy (M7/M9)
     ai::TacticalAI m_enemyAI{sim::Faction::Enemy, 12345678ULL};
     bool           m_aiEnabled{true};
+    std::string    m_aiParamsPath;
+    std::string    m_aiSourceLabel{"AI: Default"};
 
     // Hệ thống Replay (M8)
     std::string          m_replayPath;

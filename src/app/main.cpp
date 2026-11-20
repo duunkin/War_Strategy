@@ -6,18 +6,26 @@
 #include <SDL.h>
 #endif
 
+#include <string>
+
 /**
  * @brief Điểm khởi đầu chính của chương trình.
  *
- * Mốc 1: Khởi tạo cửa sổ SDL2 1280x720, vẽ lưới ô 32x32 cho bản đồ 128x96,
- * điều khiển camera (WASD, mũi tên, mép chuột, zoom con lăn chuột) và hiển thị FPS.
+ * Mốc 1 -> Mốc 9:
+ * - Hỗ trợ phát Replay với cờ --replay <file.json>
+ * - Hỗ trợ nạp bộ não AI đã huấn luyện với cờ --ai-params <file.json>
+ * - Tự động nạp data/ai_best_params.json nếu tồn tại khi chơi bình thường
  */
 int main(int argc, char* argv[]) {
     std::string replayFile;
+    std::string aiParamsFile;
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if ((arg == "--replay" || arg == "-r") && i + 1 < argc) {
             replayFile = argv[++i];
+        } else if ((arg == "--ai-params" || arg == "-p") && i + 1 < argc) {
+            aiParamsFile = argv[++i];
         }
     }
 
@@ -25,5 +33,9 @@ int main(int argc, char* argv[]) {
     if (!replayFile.empty()) {
         app.setReplayFile(replayFile);
     }
+    if (!aiParamsFile.empty()) {
+        app.setAiParamsFile(aiParamsFile);
+    }
+
     return app.run();
 }

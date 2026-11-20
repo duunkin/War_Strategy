@@ -2,6 +2,37 @@
 
 Mọi thay đổi đáng chú ý của dự án War Strategy sẽ được ghi nhận tại đây.
 
+## [M9] - 2026-11-20
+### Đã thêm (Added)
+- **Chuẩn hóa không gian tham số AI (`src/ai/AiParams.hpp`)**:
+  - Hàm `clampParams(AiParams& p)` kiểm soát chặt chẽ biên vật lý và chiến thuật: `decisionIntervalTicks` [8, 40], `aggression` [0.15, 1.50], `retreatHpRatio` [0.05, 0.70], `commanderSafeRadiusTiles` [4.0, 22.0], `artilleryStandOffMargin` [1.0, 6.0], `artilleryIdealRangeRatio` [0.50, 0.95], `scoutingWeight` [0.10, 3.00], `focusFireWeight` [0.20, 3.00], `targetMemoryTicks` [20, 400], `scoutingGroupCount` [1, 6].
+  - Cơ chế vệ sinh số thực (sanitization): tự động triệt tiêu `NaN`, `Inf` về giá trị mặc định hợp lý trước khi clamp.
+  - Toán tử so sánh `operator==` và `operator!=` cho `AiParams`.
+- **Metadata huấn luyện & JSON Round-Trip (`src/ai/AiTelemetry.hpp`)**:
+  - Struct `AiTrainingMetadata` lưu trữ `generation`, `fitness`, `winRateVsBaseline`, `trainedMatches`, `algorithm`, `timestamp`.
+  - Các hàm tiện ích `saveTrainedAiProfile` và `loadTrainedAiProfile`: hỗ trợ cả định dạng mới có metadata bọc ngoài lẫn định dạng JSON phẳng cũ, tự động gọi `clampParams` sau khi đọc để đảm bảo tính an toàn dữ liệu.
+- **Module Huấn luyện tự học thuần C++20 (`src/ai/AiTrainer.hpp`, `AiTrainer.cpp`)**:
+  - Nằm trong thư viện tĩnh `war_sim_core`, 100% không phụ thuộc SDL2, đảm bảo thread-safe tuyệt đối (không chia sẻ trạng thái static/global mutable giữa các luồng).
+  - **Mirror Match Evaluator**: Hàm `evaluatePair` tổ chức 2 trận đối xứng trên cùng 1 seed (Trận A: Candidate Blue vs Opponent Red; Trận B: Opponent Blue vs Candidate Red) nhằm triệt tiêu hoàn toàn sai lệch lợi thế sân nhà hoặc thứ tự duyệt phe.
+  - **Hàm điểm Fitness liên tục**: Kết hợp điểm phân loại kết quả (Diệt Tư lệnh: +1000, Quét sạch quân: +800, Timeout: +300; Thua trừ điểm đối xứng) + Thưởng thắng sớm (`speedBonus`) + Điểm định hình (`shaping`: chênh lệch quân số sống x0.25, số đơn vị sống x5.0, máu Tư lệnh x2.0).
+  - **Thuật toán 1 — Tiến hóa quần thể (`--mode evo`)**: Quần thể gồm $N$ cá thể `AiParams`, đánh giá qua Mirror Match với Baseline M7 và Hall of Fame; áp dụng chọn lọc tinh hoa (Elitism), lai ghép (Crossover) và đột biến hạ nhiệt (Annealing Mutation) tất định qua `FastRng`; lưu profile ngay khi phá kỷ lục.
+  - **Thuật toán 2 — Thích nghi sau trận thua (`--mode adapt`)**: Chẩn đoán nguyên nhân thất bại qua `MatchDiagnosis` (`CommanderAssassinated`, `TroopAttrition`, `OutgunnedOrTimeout`), gọi `adaptParamsAfterLoss` tinh chỉnh tham số có định hướng và tiến hành tái đấu kiểm chứng (Validation Rematch).
+  - **Showcase Replay**: Tự động sinh replay trận biểu diễn Champion AI vs Baseline M7 (`ReplayRecorder`) sau khi kết thúc huấn luyện để xem trực quan trên đồ họa SDL2.
+- **Chương trình Huấn luyện đa luồng độc lập (`src/train/main_train.cpp` -> `War_Strategy_Train`)**:
+  - Hỗ trợ đầy đủ cờ CLI: `--mode <evo|adapt>`, `--generations`, `--population`, `--seeds-per-gen`, `--max-ticks`, `--threads`, `--seed`, `--resume`, `--out-best`, `--log`, `--save-showcase-replay`, `--live`, `--scroll`, `--quiet`, `--print-every`, `--help`.
+  - Hiển thị trực quan trạng thái tiến độ thời gian thực kết hợp **đúng 2 dòng telemetry suy nghĩ của AI1[BLUE] và AI2[RED ]** lấy thread-safe từ Worker 0.
+  - Bắt tín hiệu `SIGINT` (Ctrl+C): dừng mượt sau trận đang chạy và lưu ngay `bestParams` tốt nhất ra `--out-best`.
+- **Tích hợp bộ não AI vào Game chính SDL2 (`src/app/main.cpp`, `GameApp`)**:
+  - Thêm cờ `--ai-params <file>` cho `War_Strategy`.
+  - Tự động nạp `data/ai_best_params.json` cho `m_enemyAI` nếu có (nếu không truyền `--ai-params` và không ở chế độ `--replay`); fallback êm ái về mặc định.
+  - Hiển thị nguồn AI trên HUD (`AI: Trained (Gen X)` / `AI: Custom (<file>)` / `AI: Default`). Chế độ Replay giữ nguyên không bị ảnh hưởng.
+- **Bộ kiểm thử tự động toàn diện (`tests/test_train.cpp`)**:
+  - `testParamsBoundsAndJsonRoundTrip`: Đột biến 100 lần (kể cả âm, cực lớn, NaN, Inf), xác nhận 100% nằm trong bounds và JSON round-trip khớp 100%.
+  - `testMirrorMatchDeterminism`: Xác nhận 2 lần chạy Mirror Match độc lập cùng seed cho kết quả giống nhau 100%.
+  - `testPostLossAdaptation`: Xác nhận các kịch bản thua do Tư lệnh chết hoặc mất quân đều điều chỉnh đúng hướng mong đợi và luôn hợp lệ.
+  - `testMiniEvolutionEndToEnd`: Chạy mini evolution 2 thế hệ x 4 cá thể x 2 luồng, không data race, xuất đủ file JSON + CSV và nạp lại vào `TacticalAI` ra lệnh mượt mà.
+  - Toàn bộ 8/8 test suite của dự án đạt tỉ lệ PASS 100%.
+
 ## [M8] - 2026-11-20
 ### Đã thêm (Added)
 - **Tách kiến trúc thư viện lõi `war_sim_core` (Pure C++20, No SDL2)**:

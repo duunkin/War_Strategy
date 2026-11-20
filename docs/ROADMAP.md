@@ -49,8 +49,16 @@
   - Bộ kiểm thử tự động `tests/test_replay.cpp` kiểm tra tính tất định 100% giữa Live AI vs Replay Playback, Telemetry snapshot và Batch CSV log.
   - *Kết quả*: Hoàn thành, 7/7 test suites passed 100%.
 
-- [ ] **M9: AI tự tối ưu & Huấn luyện**
-  - AI tự tinh chỉnh tham số sau các trận đấu.
+- [x] **M9: AI tự tối ưu & Huấn luyện (Evolutionary Self-Play & Post-Loss Adaptation)**
+  - Chuẩn hóa không gian tham số `AiParams` với hàm `clampParams()` kiểm soát chặt chẽ biên vật lý/chiến thuật (chống NaN/Inf, lag A* hoặc đơ).
+  - Module huấn luyện độc lập thuần C++20 `AiTrainer` trong `war_sim_core` (không phụ thuộc SDL2/Render), hỗ trợ 2 thuật toán:
+    * **Tiến hóa quần thể (`--mode evo`)**: Quần thể tham số tiến hóa qua nhiều thế hệ, đánh giá công bằng qua Mirror Match (đổi sân Player Blue/Enemy Red trên cùng seed) với Baseline M7 và Hall of Fame; chọn lọc tinh hoa (Elitism), lai ghép (Crossover) và đột biến hạ nhiệt (Annealing Mutation) tất định qua `FastRng`.
+    * **Thích nghi sau trận thua (`--mode adapt`)**: Chẩn đoán nguyên nhân thất bại (`MatchDiagnosis`: Tư lệnh chết, tiêu hao quân số, áp đảo hỏa lực/hết giờ), tinh chỉnh tham số có định hướng và tái đấu kiểm chứng (Validation Rematch).
+  - Hàm điểm Fitness liên tục có độ phân giải cao kết hợp điểm kết quả, thưởng thắng sớm và điểm định hình (shaping: Troops, Units, CmdHP).
+  - Executable huấn luyện đa luồng độc lập `War_Strategy_Train` hỗ trợ cờ CLI phong phú (`--mode`, `--generations`, `--population`, `--seeds-per-gen`, `--threads`, `--resume`, `--out-best`, `--log`, `--save-showcase-replay`), hiển thị tiến độ trực quan kèm 2 dòng telemetry suy nghĩ AI1/AI2 theo thời gian thực từ Worker 0, ngắt mượt SIGINT lưu checkpoint.
+  - Tích hợp nạp profile huấn luyện vào game SDL2 `War_Strategy` qua cờ `--ai-params <file>` hoặc tự động nạp `data/ai_best_params.json` nếu có, hiển thị nhãn nguồn trên HUD (`AI: Trained` / `AI: Default`).
+  - Bộ kiểm thử tự động `tests/test_train.cpp` kiểm tra 4/4 kịch bản: Params Bounds & JSON Round-Trip, Mirror Match Determinism, Post-Loss Adaptation và Mini Evolution End-to-End đa luồng.
+  - *Kết quả*: Hoàn thành, 8/8 test suites passed 100%.
 
 - [ ] **M10: Hoàn thiện, cân bằng & Đóng gói đa nền tảng**
   - Chơi ván đấu trọn vẹn, đóng gói phát hành Windows, Linux, macOS.

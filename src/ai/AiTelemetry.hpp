@@ -6,6 +6,8 @@
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <fstream>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 namespace ai {
@@ -114,6 +116,93 @@ inline void from_json(const nlohmann::json& j, AiParams& p) {
     if (j.contains("enableCommanderRetreat")) j.at("enableCommanderRetreat").get_to(p.enableCommanderRetreat);
     if (j.contains("enableUnitRetreat")) j.at("enableUnitRetreat").get_to(p.enableUnitRetreat);
     if (j.contains("scoutingGroupCount")) j.at("scoutingGroupCount").get_to(p.scoutingGroupCount);
+    clampParams(p);
+}
+
+// =============================================================================
+// Metadata huấn luyện AI (M9)
+// =============================================================================
+struct AiTrainingMetadata {
+    uint32_t    generation{0};
+    float       fitness{0.0f};
+    float       winRateVsBaseline{0.0f};
+    uint32_t    trainedMatches{0};
+    std::string algorithm{"evo"}; // "evo" | "adapt"
+    std::string timestamp{""};
+};
+
+inline void to_json(nlohmann::json& j, const AiTrainingMetadata& m) {
+    j = nlohmann::json{
+        {"generation", m.generation},
+        {"fitness", m.fitness},
+        {"winRateVsBaseline", m.winRateVsBaseline},
+        {"trainedMatches", m.trainedMatches},
+        {"algorithm", m.algorithm},
+        {"timestamp", m.timestamp}
+    };
+}
+
+inline void from_json(const nlohmann::json& j, AiTrainingMetadata& m) {
+    if (j.contains("generation")) j.at("generation").get_to(m.generation);
+    if (j.contains("fitness")) j.at("fitness").get_to(m.fitness);
+    if (j.contains("winRateVsBaseline")) j.at("winRateVsBaseline").get_to(m.winRateVsBaseline);
+    if (j.contains("trainedMatches")) j.at("trainedMatches").get_to(m.trainedMatches);
+    if (j.contains("algorithm")) j.at("algorithm").get_to(m.algorithm);
+    if (j.contains("timestamp")) j.at("timestamp").get_to(m.timestamp);
+}
+
+/**
+ * @brief Lưu bộ tham số AiParams kèm metadata huấn luyện ra file JSON chuẩn
+ */
+inline bool saveTrainedAiProfile(const std::string& filepath, const AiParams& params, const AiTrainingMetadata& meta) {
+    try {
+        std::filesystem::path p(filepath);
+        if (p.has_parent_path()) {
+            std::filesystem::create_directories(p.parent_path());
+        }
+        std::ofstream f(filepath);
+        if (!f.is_open()) return false;
+
+        nlohmann::json root;
+        root["metadata"] = meta;
+        root["params"] = params;
+
+        f << root.dump(4) << "\n";
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+/**
+ * @brief Nạp bộ tham số AiParams (và metadata nếu có) từ file JSON
+ *
+ * Hỗ trợ cả 2 định dạng:
+ * - Dạng profile đầy đủ: {"metadata": {...}, "params": {...}}
+ * - Dạng phẳng trực tiếp: {"aggression": 0.8, ...}
+ */
+inline bool loadTrainedAiProfile(const std::string& filepath, AiParams& outParams, AiTrainingMetadata* outMeta = nullptr) {
+    try {
+        std::ifstream f(filepath);
+        if (!f.is_open()) return false;
+
+        nlohmann::json root = nlohmann::json::parse(f);
+        if (root.contains("params") && root["params"].is_object()) {
+            from_json(root["params"], outParams);
+            if (outMeta && root.contains("metadata") && root["metadata"].is_object()) {
+                from_json(root["metadata"], *outMeta);
+            }
+        } else {
+            from_json(root, outParams);
+            if (outMeta && root.contains("metadata") && root["metadata"].is_object()) {
+                from_json(root["metadata"], *outMeta);
+            }
+        }
+        clampParams(outParams);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 /**

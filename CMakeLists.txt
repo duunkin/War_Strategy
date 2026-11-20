@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
+find_package(Threads REQUIRED)
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -60,6 +62,8 @@ set(CORE_SOURCES
     src/ai/AiTelemetry.hpp
     src/ai/TacticalAI.hpp
     src/ai/TacticalAI.cpp
+    src/ai/AiTrainer.hpp
+    src/ai/AiTrainer.cpp
 
     src/replay/Replay.hpp
     src/replay/Replay.cpp
@@ -67,7 +71,7 @@ set(CORE_SOURCES
 
 add_library(war_sim_core STATIC ${CORE_SOURCES})
 target_include_directories(war_sim_core PUBLIC src)
-target_link_libraries(war_sim_core PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(war_sim_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads)
 
 # ==============================================================================
 # Graphical Application (War_Strategy: SDL2 + SDL2_ttf)
@@ -109,6 +113,13 @@ target_include_directories(War_Strategy_Headless PRIVATE src)
 target_link_libraries(War_Strategy_Headless PRIVATE war_sim_core)
 
 # ==============================================================================
+# AI Self-Play & Trainer Executable (War_Strategy_Train: Pure C++20, NO SDL2)
+# ==============================================================================
+add_executable(War_Strategy_Train src/train/main_train.cpp)
+target_include_directories(War_Strategy_Train PRIVATE src)
+target_link_libraries(War_Strategy_Train PRIVATE war_sim_core Threads::Threads)
+
+# ==============================================================================
 # Testing
 # ==============================================================================
 enable_testing()
@@ -147,3 +158,8 @@ add_executable(test_replay tests/test_replay.cpp)
 target_include_directories(test_replay PRIVATE src)
 target_link_libraries(test_replay PRIVATE war_sim_core)
 add_test(NAME test_replay COMMAND test_replay)
+
+add_executable(test_train tests/test_train.cpp)
+target_include_directories(test_train PRIVATE src)
+target_link_libraries(test_train PRIVATE war_sim_core Threads::Threads)
+add_test(NAME test_train COMMAND test_train)

@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <chrono>
+#include <filesystem>
 
 namespace app {
 
@@ -94,6 +95,7 @@ bool GameApp::init() {
         if (m_replayPlayer.loadFromFile(m_replayPath)) {
             m_isReplayMode = true;
             m_aiEnabled = false; // Tắt AI live khi xem replay
+            m_aiSourceLabel = "REPLAY";
             m_currentSeed = m_replayPlayer.getSeed();
             std::cout << "[GameApp] REPLAY MODE: Nap thanh cong " << m_replayPath
                       << " | Seed: " << m_currentSeed
@@ -103,6 +105,39 @@ bool GameApp::init() {
             m_notificationTimer = 3.0f;
         } else {
             std::cerr << "[GameApp] LOI: Khong the mo file replay: " << m_replayPath << std::endl;
+        }
+    }
+
+    // M9: Nạp bộ não AI đã huấn luyện nếu không ở chế độ Replay
+    if (!m_isReplayMode) {
+        if (!m_aiParamsPath.empty()) {
+            ai::AiParams loadedParams;
+            ai::AiTrainingMetadata loadedMeta;
+            if (ai::loadTrainedAiProfile(m_aiParamsPath, loadedParams, &loadedMeta)) {
+                m_enemyAI.setParams(loadedParams);
+                std::filesystem::path p(m_aiParamsPath);
+                m_aiSourceLabel = "AI: Custom (" + p.filename().string() + ")";
+                std::cout << "[GameApp] Da nap AiParams tu: " << m_aiParamsPath << std::endl;
+            } else {
+                std::cerr << "[GameApp] Khong the nap AiParams tu " << m_aiParamsPath << ", fallback mac dinh.\n";
+                m_aiSourceLabel = "AI: Default";
+            }
+        } else if (std::filesystem::exists("data/ai_best_params.json")) {
+            ai::AiParams loadedParams;
+            ai::AiTrainingMetadata loadedMeta;
+            if (ai::loadTrainedAiProfile("data/ai_best_params.json", loadedParams, &loadedMeta)) {
+                m_enemyAI.setParams(loadedParams);
+                if (loadedMeta.generation > 0) {
+                    m_aiSourceLabel = "AI: Trained (Gen " + std::to_string(loadedMeta.generation) + ")";
+                } else {
+                    m_aiSourceLabel = "AI: Trained";
+                }
+                std::cout << "[GameApp] Phat hien va nap thanh cong data/ai_best_params.json (" << m_aiSourceLabel << ")" << std::endl;
+            } else {
+                m_aiSourceLabel = "AI: Default";
+            }
+        } else {
+            m_aiSourceLabel = "AI: Default";
         }
     }
 
@@ -538,10 +573,11 @@ void GameApp::render() {
     // TODO: [DEBUG ONLY - F1 & F2 & F3]
     bool isPlayerCtrl = (viewingFaction == sim::Faction::Player);
     char f1Buffer[160];
-    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s  |  [F3] AI: %s",
+    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s  |  [F3] AI: %s (%s)",
                   isPlayerCtrl ? "PHE XANH (Player)" : "PHE DO (Enemy)",
                   m_debugFogDisabled ? "TAT (Debug)" : "BAT",
-                  m_aiEnabled ? "BAT" : "TAT");
+                  m_aiEnabled ? "BAT" : "TAT",
+                  m_aiSourceLabel.c_str());
     SDL_Color f1Color = isPlayerCtrl ? SDL_Color{100, 200, 255, 255} : SDL_Color{255, 120, 110, 255};
     m_textRenderer.renderText(renderer, f1Buffer, 16, 68, f1Color, true);
 
