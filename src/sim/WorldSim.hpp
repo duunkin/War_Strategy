@@ -48,6 +48,7 @@ public:
     [[nodiscard]] SimConfig& getConfig() { return m_config; }
     [[nodiscard]] const WorldMap& getMap() const { return m_map; }
     [[nodiscard]] uint64_t getCurrentTick() const { return m_currentTick; }
+    void setCurrentTick(uint64_t tick) { m_currentTick = tick; }
 
     // Chiến đấu & Kết quả ván đấu (M5)
     [[nodiscard]] bool isGameOver() const { return m_matchEndInfo.result != MatchResult::InProgress; }
