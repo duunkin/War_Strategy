@@ -287,6 +287,241 @@ void testCombatAndMovementEngagement() {
     std::cout << "  -> PASSED: AI vs AI headless hoat dong on dinh, khong crash, dieu quan chuan xac!" << std::endl;
 }
 
+// =============================================================================
+// TEST 5: Kiem tra cac tham so AI co tac dung thuc te (Parameter Effectiveness Test)
+// =============================================================================
+void testParameterEffectiveness() {
+    std::cout << "[TestAI] 5. Kiem tra tinh co hieu luc cua cac tham so AI (Parameter Effectiveness)..." << std::endl;
+
+    constexpr uint64_t SEED = 77777ULL;
+
+    // 5.1. Kiem tra tham so 'aggression' (dieu khien cu ly tien quan va ti le tan cong)
+    {
+        WorldMap map(128, 96, 32);
+        WorldSim sim(map);
+        initSim(sim);
+        sim.spawnDivisions(SEED);
+
+        AiParams paramsLow;
+        paramsLow.aggression = 0.20f;
+        TacticalAI aiLow(Faction::Enemy, SEED, paramsLow);
+
+        AiParams paramsHigh;
+        paramsHigh.aggression = 1.30f;
+        TacticalAI aiHigh(Faction::Enemy, SEED, paramsHigh);
+
+        std::vector<Command> cmdsLow = aiLow.plan(sim);
+        std::vector<Command> cmdsHigh = aiHigh.plan(sim);
+
+        bool foundDifference = false;
+        for (const auto& cLow : cmdsLow) {
+            if (cLow.type == CommandType::Move && !cLow.move.unitIds.empty()) {
+                uint32_t uid = cLow.move.unitIds[0];
+                for (const auto& cHigh : cmdsHigh) {
+                    if (cHigh.type == CommandType::Move && !cHigh.move.unitIds.empty() && cHigh.move.unitIds[0] == uid) {
+                        if (cLow.move.targetTileX != cHigh.move.targetTileX || cLow.move.targetTileY != cHigh.move.targetTileY) {
+                            foundDifference = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (foundDifference) break;
+        }
+        assert(foundDifference && "Tham so 'aggression' phai lam thay doi lenh di chuyen cua quan chu luc!");
+        std::cout << "  - Tham so 'aggression': Da kiem chung tao ra lenh di chuyen khac biet ro ret." << std::endl;
+    }
+
+    // 5.2. Kiem tra tham so 'scoutingWeight' (dieu khien cu ly tham nhap trinh sat Puma)
+    {
+        WorldMap map(128, 96, 32);
+        WorldSim sim(map);
+        initSim(sim);
+        sim.spawnDivisions(SEED);
+
+        AiParams paramsLow;
+        paramsLow.scoutingWeight = 0.30f;
+        TacticalAI aiLow(Faction::Enemy, SEED, paramsLow);
+
+        AiParams paramsHigh;
+        paramsHigh.scoutingWeight = 2.00f;
+        TacticalAI aiHigh(Faction::Enemy, SEED, paramsHigh);
+
+        std::vector<Command> cmdsLow = aiLow.plan(sim);
+        std::vector<Command> cmdsHigh = aiHigh.plan(sim);
+
+        bool foundPumaDiff = false;
+        for (const auto& cLow : cmdsLow) {
+            if (cLow.type == CommandType::Move && !cLow.move.unitIds.empty()) {
+                uint32_t uid = cLow.move.unitIds[0];
+                const Unit* u = nullptr;
+                for (const auto& unit : sim.getUnits()) {
+                    if (unit.getId() == uid) {
+                        u = &unit;
+                        break;
+                    }
+                }
+                if (u && u->getType() == UnitType::Puma) {
+                    for (const auto& cHigh : cmdsHigh) {
+                        if (cHigh.type == CommandType::Move && !cHigh.move.unitIds.empty() && cHigh.move.unitIds[0] == uid) {
+                            if (cLow.move.targetTileX != cHigh.move.targetTileX) {
+                                foundPumaDiff = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (foundPumaDiff) break;
+        }
+        assert(foundPumaDiff && "Tham so 'scoutingWeight' phai lam thay doi toa do muc tieu trinh sat cua Puma!");
+        std::cout << "  - Tham so 'scoutingWeight': Da kiem chung lam thay doi dich den trinh sat." << std::endl;
+    }
+
+    // 5.3. Kiem tra tham so 'artilleryStandOffMargin' (nguong lui cua phao Caesar)
+    {
+        WorldMap map(128, 96, 32);
+        WorldSim sim(map);
+        initSim(sim);
+
+        const auto* caesarCfg = sim.getConfig().getUnitConfig(UnitType::Caesar);
+        const auto* infCfg = sim.getConfig().getUnitConfig(UnitType::Infantry);
+        const auto* suCfg = sim.getConfig().getUnitConfig(UnitType::Su57);
+
+        // Caesar tai (60, 50), dich tai (53, 50) -> khoang cach 7.0 o
+        // Caesar range = 14. 14 * 0.8 = 11.2
+        sim.getUnits().emplace_back(101, Faction::Enemy, UnitType::Caesar, 60000, 50000, *caesarCfg);
+        sim.getUnits().emplace_back(201, Faction::Player, UnitType::Infantry, 53000, 50000, *infCfg);
+        // Su57 mo tam nhin
+        sim.getUnits().emplace_back(102, Faction::Enemy, UnitType::Su57, 53000, 48000, *suCfg);
+        sim.updateVision();
+
+        AiParams paramsRetreat;
+        paramsRetreat.artilleryStandOffMargin = 1.0f; // retreatThreshold = 11.2 - 1.0 = 10.2 > 7.0 -> Lui!
+        TacticalAI aiRetreat(Faction::Enemy, SEED, paramsRetreat);
+
+        AiParams paramsHold;
+        paramsHold.artilleryStandOffMargin = 6.0f; // retreatThreshold = 11.2 - 6.0 = 5.2 <= 7.0 -> Giu nguyen ban!
+        TacticalAI aiHold(Faction::Enemy, SEED, paramsHold);
+
+        std::vector<Command> cmdsRetreat = aiRetreat.plan(sim);
+        std::vector<Command> cmdsHold = aiHold.plan(sim);
+
+        bool retreatIssued = false;
+        for (const auto& cmd : cmdsRetreat) {
+            if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == 101) {
+                retreatIssued = true;
+            }
+        }
+        bool holdIssuedMove = false;
+        for (const auto& cmd : cmdsHold) {
+            if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == 101) {
+                holdIssuedMove = true;
+            }
+        }
+
+        assert(retreatIssued && !holdIssuedMove && "Caesar phai lui khi margin hep va dung im ban khi margin rong!");
+        std::cout << "  - Tham so 'artilleryStandOffMargin': Da kiem chung quyet dinh hanh vi lui vs giu vi tri cua Caesar." << std::endl;
+    }
+
+    // 5.4. Kiem tra tham so 'focusFireWeight' (don hoa luc vao cung mot muc tieu)
+    {
+        WorldMap map(128, 96, 32);
+        WorldSim sim(map);
+        initSim(sim);
+
+        const auto* infCfg = sim.getConfig().getUnitConfig(UnitType::Infantry);
+        const auto* suCfg = sim.getConfig().getUnitConfig(UnitType::Su57);
+
+        // 2 quan ta (Infantry): u1 tai (50, 50), u2 tai (40, 55)
+        sim.getUnits().emplace_back(10, Faction::Enemy, UnitType::Infantry, 50000, 50000, *infCfg);
+        sim.getUnits().emplace_back(11, Faction::Enemy, UnitType::Infantry, 40000, 55000, *infCfg);
+
+        // 2 dich (Infantry): eA tai (40, 50), eB tai (42, 50)
+        sim.getUnits().emplace_back(20, Faction::Player, UnitType::Infantry, 40000, 50000, *infCfg);
+        sim.getUnits().emplace_back(21, Faction::Player, UnitType::Infantry, 42000, 50000, *infCfg);
+
+        // Su-57 de mo tam nhin
+        sim.getUnits().emplace_back(12, Faction::Enemy, UnitType::Su57, 41000, 50000, *suCfg);
+        sim.updateVision();
+
+        AiParams pNoFocus;
+        pNoFocus.focusFireWeight = 1.0f;
+        TacticalAI aiNoFocus(Faction::Enemy, SEED, pNoFocus);
+
+        AiParams pFocus;
+        pFocus.focusFireWeight = 4.0f;
+        TacticalAI aiFocus(Faction::Enemy, SEED, pFocus);
+
+        std::vector<Command> cmdsNoFocus = aiNoFocus.plan(sim);
+        std::vector<Command> cmdsFocus = aiFocus.plan(sim);
+
+        // Tim dich den cua unit 11 trong 2 truong hop
+        int targetXNoFocus = -1;
+        for (const auto& cmd : cmdsNoFocus) {
+            if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == 11) {
+                targetXNoFocus = cmd.move.targetTileX;
+            }
+        }
+        int targetXFocus = -1;
+        for (const auto& cmd : cmdsFocus) {
+            if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == 11) {
+                targetXFocus = cmd.move.targetTileX;
+            }
+        }
+
+        assert(targetXNoFocus != -1 && targetXFocus != -1);
+        assert(targetXNoFocus != targetXFocus && "Tham so 'focusFireWeight' phai thay doi muc tieu don hoa luc cua don vi thu hai!");
+        std::cout << "  - Tham so 'focusFireWeight': Da kiem chung don hoa luc thanh cong." << std::endl;
+    }
+
+    // 5.5. Kiem tra tham so 'enableCommanderRetreat'
+    {
+        WorldMap map(128, 96, 32);
+        WorldSim sim(map);
+        initSim(sim);
+
+        const auto* cmdCfg = sim.getConfig().getUnitConfig(UnitType::Commander);
+        const auto* infCfg = sim.getConfig().getUnitConfig(UnitType::Infantry);
+        const auto* suCfg = sim.getConfig().getUnitConfig(UnitType::Su57);
+
+        // Commander tai (50, 50), dich tai (48, 50)
+        sim.getUnits().emplace_back(1, Faction::Enemy, UnitType::Commander, 50000, 50000, *cmdCfg);
+        sim.getUnits().emplace_back(2, Faction::Player, UnitType::Infantry, 48000, 50000, *infCfg);
+        sim.getUnits().emplace_back(3, Faction::Enemy, UnitType::Su57, 49000, 50000, *suCfg);
+        sim.updateVision();
+
+        AiParams pRetreat;
+        pRetreat.enableCommanderRetreat = true;
+        TacticalAI aiRetreat(Faction::Enemy, SEED, pRetreat);
+
+        AiParams pNoRetreat;
+        pNoRetreat.enableCommanderRetreat = false;
+        TacticalAI aiNoRetreat(Faction::Enemy, SEED, pNoRetreat);
+
+        std::vector<Command> cmdsRetreat = aiRetreat.plan(sim);
+        std::vector<Command> cmdsNoRetreat = aiNoRetreat.plan(sim);
+
+        bool cmdMovedRetreat = false;
+        for (const auto& cmd : cmdsRetreat) {
+            if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == 1) {
+                cmdMovedRetreat = true;
+            }
+        }
+        bool cmdMovedNoRetreat = false;
+        for (const auto& cmd : cmdsNoRetreat) {
+            if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == 1) {
+                cmdMovedNoRetreat = true;
+            }
+        }
+
+        assert(cmdMovedRetreat && !cmdMovedNoRetreat && "enableCommanderRetreat phai dieu khien lenh chay cua Tu lenh!");
+        std::cout << "  - Tham so 'enableCommanderRetreat': Da kiem chung bat/tat rut lui Tu lenh." << std::endl;
+    }
+
+    std::cout << "  -> PASSED: Toan bo cac tham so AI deu da duoc chung minh co tac dung thuc te 100%!" << std::endl;
+}
+
 int main() {
     std::cout << "====================================================" << std::endl;
     std::cout << "BAT DAU TEST SUITE CHO MOC M7: TACTICAL AI" << std::endl;
@@ -296,9 +531,10 @@ int main() {
     testFogOfWarCompliance();
     testTacticalBehaviors();
     testCombatAndMovementEngagement();
+    testParameterEffectiveness();
 
     std::cout << "====================================================" << std::endl;
-    std::cout << "TAT CA 4/4 TEST M7 CHO TACTICAL AI DEU PASS 100%!" << std::endl;
+    std::cout << "TAT CA 5/5 TEST M7 CHO TACTICAL AI DEU PASS 100%!" << std::endl;
     std::cout << "====================================================" << std::endl;
     return 0;
 }

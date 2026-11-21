@@ -482,8 +482,9 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             int dy = bestTarget->lastTileY - cy;
             float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
 
-            // Nếu địch áp sát quá gần (< 5 ô): Lùi lại gấp!
-            if (dist < 5.0f) {
+            // Nếu địch áp sát quá gần: Lùi lại gấp (ngưỡng điều khiển bởi artilleryStandOffMargin)
+            float retreatThreshold = std::max(2.0f, range * m_params.artilleryIdealRangeRatio - m_params.artilleryStandOffMargin);
+            if (dist < retreatThreshold) {
                 sim::TileCoord retreatTile = findSafeRetreatTile(
                     sim, cx, cy, bestTarget->lastTileX, bestTarget->lastTileY,
                     sim::UnitDomain::Land, sim::UnitType::Caesar, 3, 6
@@ -869,6 +870,8 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
 
     // 2. Nếu đã phát hiện mục tiêu địch: Điều phối tấn công mục tiêu ưu tiên
     if (!m_memory.empty()) {
+        std::unordered_map<uint32_t, int> targetCounts;
+
         for (const auto* u : readyUnits) {
             int ux = u->getTileX();
             int uy = u->getTileY();
@@ -907,7 +910,15 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                     else if (enemy.type == sim::UnitType::Commander) priority = 5.0f;
                 }
 
-                float score = priority / (1.0f + dist * 0.15f);
+                // Dồn hỏa lực (focusFireWeight): nhân vào điểm ưu tiên của mục tiêu đang bị nhiều đơn vị ta nhắm; nếu 1.0 thì giữ hành vi cũ
+                auto itCount = targetCounts.find(enemy.unitId);
+                if (itCount != targetCounts.end() && itCount->second > 0) {
+                    priority *= std::pow(m_params.focusFireWeight, static_cast<float>(itCount->second));
+                }
+
+                // Cân nhắc khoảng cách: aggression cao sẵn sàng truy kích mục tiêu xa hơn
+                float distPenalty = 0.15f / std::clamp(m_params.aggression, 0.2f, 2.0f);
+                float score = priority / (1.0f + dist * distPenalty);
                 if (score > bestScore) {
                     bestScore = score;
                     bestEnemy = &enemy;
@@ -915,6 +926,7 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
             }
 
             if (bestEnemy) {
+                targetCounts[bestEnemy->unitId]++;
                 int targetX = bestEnemy->lastTileX;
                 int targetY = bestEnemy->lastTileY;
 
@@ -959,13 +971,16 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
     }
     // 3. Khi CHƯA thấy địch: Chia lực lượng trinh sát & tiến công đa hướng
     else {
-        // Nhóm Puma: trinh sát tiền tiêu (scouting)
+        // Nhóm Puma: trinh sát tiền tiêu (scoutingWeight & scoutingGroupCount điều khiển số lượng và độ vươn xa)
+        int maxScouts = std::clamp(static_cast<int>(std::round(m_params.scoutingGroupCount * std::clamp(m_params.scoutingWeight, 0.4f, 2.0f))), 1, 8);
         int scoutCount = 0;
+        std::vector<const sim::Unit*> combatUnits;
+
         for (const auto* u : readyUnits) {
-            if (u->getType() == sim::UnitType::Puma) {
+            if (u->getType() == sim::UnitType::Puma && scoutCount < maxScouts) {
                 if (!u->hasPath()) {
                     sim::TileCoord scoutTarget = pickScoutingTarget(
-                        sim, scoutCount++, m_params.scoutingGroupCount,
+                        sim, scoutCount++, maxScouts,
                         u->getDomain(), u->getType()
                     );
                     sim::Command cmd;
@@ -975,18 +990,32 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                     cmd.move.targetTileY = scoutTarget.y;
                     outCommands.push_back(cmd);
                 }
+            } else {
+                combatUnits.push_back(u);
             }
         }
 
-        // Nhóm Tăng chủ lực & Bộ binh: tiến quân theo 3 cánh (Bắc, Trung tâm, Nam)
-        int mainIndex = 0;
-        for (const auto* u : readyUnits) {
-            if (u->getType() == sim::UnitType::Puma) continue; // Đã xử lý ở trên
+        // Nhóm Tăng chủ lực & Bộ binh: aggression điều khiển tỉ lệ tấn công vs giữ hậu phương và cự ly tiến quân
+        int halfW = map.getWidth() / 2;
+        int advanceOffset = static_cast<int>(6.0f + 24.0f * std::clamp(m_params.aggression, 0.15f, 1.50f));
+        int offensiveDestX = (m_controlledFaction == sim::Faction::Enemy) ? (halfW - advanceOffset) : (halfW + advanceOffset);
+        offensiveDestX = std::clamp(offensiveDestX, 4, map.getWidth() - 5);
+
+        // Tỉ lệ quân tham gia tiến công (thay vì ở lại bảo vệ hậu tuyến)
+        float attackRatio = std::clamp(0.25f + 0.75f * (m_params.aggression / 1.5f), 0.25f, 1.0f);
+        int maxAttackers = std::max(1, static_cast<int>(std::round(combatUnits.size() * attackRatio)));
+
+        int rearX = (m_controlledFaction == sim::Faction::Enemy) ? (map.getWidth() - 12) : 12;
+
+        int combatIndex = 0;
+        for (const auto* u : combatUnits) {
             if (u->hasPath()) continue;
 
-            int sector = (mainIndex++) % 3; // 0: Bắc, 1: Trung tâm, 2: Nam
-            int halfW = map.getWidth() / 2;
-            int destX = (m_controlledFaction == sim::Faction::Enemy) ? (halfW - 15) : (halfW + 15);
+            int sector = (combatIndex % 3); // 0: Bắc, 1: Trung tâm, 2: Nam
+            bool isAttacking = (combatIndex < maxAttackers);
+            combatIndex++;
+
+            int destX = isAttacking ? offensiveDestX : rearX;
             int destY = (sector == 0) ? (map.getHeight() / 4)
                       : (sector == 1) ? (map.getHeight() / 2)
                                       : (3 * map.getHeight() / 4);
@@ -1129,10 +1158,14 @@ sim::TileCoord TacticalAI::pickScoutingTarget(const sim::WorldSim& sim,
     int nSectors = std::max(1, totalScouts);
     int sector = scoutIndex % nSectors;
 
-    // Trinh sát hướng về nửa bản đồ đối phương
+    // Trinh sát hướng về nửa bản đồ đối phương; cự ly thâm nhập phụ thuộc scoutingWeight
+    float depthFactor = std::clamp(m_params.scoutingWeight, 0.2f, 2.5f);
+    int midW = mapW / 2;
+    int baseOffset = static_cast<int>(8.0f + 18.0f * depthFactor);
+
     int targetX = (m_controlledFaction == sim::Faction::Enemy)
-                  ? (mapW / 4 + (scoutIndex % 2) * 10)
-                  : (3 * mapW / 4 - (scoutIndex % 2) * 10);
+                  ? std::clamp(midW - baseOffset + (scoutIndex % 2) * 8, 4, mapW - 5)
+                  : std::clamp(midW + baseOffset - (scoutIndex % 2) * 8, 4, mapW - 5);
 
     int targetY = (mapH / (nSectors + 1)) * (sector + 1);
 

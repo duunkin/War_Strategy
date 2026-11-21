@@ -576,6 +576,14 @@ AiParams AiTrainer::mutate(const AiParams& p, float mutationRate, mapgen::FastRn
         res.scoutingGroupCount = std::clamp(res.scoutingGroupCount + rng.range(-1, 1), 1, 6);
     }
 
+    if (static_cast<float>(rng.range(0, 1000)) / 1000.0f < mutationRate) {
+        res.enableCommanderRetreat = !res.enableCommanderRetreat;
+    }
+
+    if (static_cast<float>(rng.range(0, 1000)) / 1000.0f < mutationRate) {
+        res.enableUnitRetreat = !res.enableUnitRetreat;
+    }
+
     clampParams(res);
     return res;
 }

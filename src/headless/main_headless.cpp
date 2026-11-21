@@ -87,19 +87,11 @@ bool enableWindowsAnsi() {
 }
 
 bool loadAiParamsFromFile(const std::string& path, ai::AiParams& outParams) {
-    try {
-        std::ifstream f(path);
-        if (!f.is_open()) {
-            std::cerr << "[Warning] Khong the mo file AiParams: " << path << ", dung gia tri mac dinh.\n";
-            return false;
-        }
-        nlohmann::json j = nlohmann::json::parse(f);
-        ai::from_json(j, outParams);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "[Warning] Loi doc JSON tu file " << path << ": " << e.what() << "\n";
+    if (!ai::loadTrainedAiProfile(path, outParams)) {
+        std::cerr << "[Warning] Khong the mo hoac parse file AiParams: " << path << ", dung gia tri mac dinh.\n";
         return false;
     }
+    return true;
 }
 
 std::string matchResultToWinnerString(sim::MatchResult res) {
