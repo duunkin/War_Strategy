@@ -417,8 +417,8 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
         }
     }
 
-    // Nếu đang an toàn và đã có đường đi, tiếp tục di chuyển; nếu chưa, có thể lùi nhẹ về cụm quân bảo vệ
-    if (!commander.hasPath() && !friendlyUnits.empty()) {
+    // Nếu đang an toàn và được phép rút lui: nếu chưa có đường đi, có thể lùi nhẹ về cụm quân bảo vệ
+    if (m_params.enableCommanderRetreat && !commander.hasPath() && !friendlyUnits.empty()) {
         // Giữ vị trí an toàn ở phía sau đội hình
         int homeBaseX = (m_controlledFaction == sim::Faction::Enemy) ? (sim.getMap().getWidth() - 12) : 12;
         int homeBaseY = sim.getMap().getHeight() / 2;
