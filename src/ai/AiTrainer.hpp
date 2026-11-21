@@ -60,6 +60,10 @@ struct SingleMatchResult {
     bool             isWin{false};
     bool             isLoss{false};
     bool             isDraw{false};
+
+    [[nodiscard]] bool didCandidateCommanderDie() const {
+        return candidateCommanderHp <= 0 || (isLoss && endKind == sim::MatchEndKind::CommanderKilled);
+    }
 };
 
 /**
@@ -138,6 +142,7 @@ struct Individual {
     AiParams params;
     float    fitness{0.0f};
     float    winRateVsBaseline{0.0f};
+    int      commanderDeaths{0};
     int      matchesWon{0};
     int      totalMatches{0};
 };
@@ -241,7 +246,7 @@ private:
     void initCsvLog();
     // Ghi dòng log CSV cho 1 thế hệ
     void logCsvGeneration(uint32_t gen, float bestFit, float avgFit, float winRateVsBase,
-                          int matches, double wallMs, const AiParams& bestP);
+                          int commanderDeaths, int matches, double wallMs, const AiParams& bestP);
 
 private:
     TrainerConfig       m_config;

@@ -286,10 +286,17 @@ void testMiniEvolutionEndToEnd() {
         std::ifstream csv(logCsvFile);
         std::string line;
         int lineCount = 0;
+        bool hasCmdDeathsCol = false;
         while (std::getline(csv, line)) {
-            if (!line.empty()) lineCount++;
+            if (!line.empty()) {
+                lineCount++;
+                if (line.find("commander_deaths") != std::string::npos) {
+                    hasCmdDeathsCol = true;
+                }
+            }
         }
         assert(lineCount >= 3 && "CSV phai chua it nhat 1 header + 2 dong du lieu the he!");
+        assert(hasCmdDeathsCol && "CSV phai chua cot commander_deaths!");
     }
 
     // Thử nghiệm nạp bestParams vào TacticalAI và WorldSim chạy thực tế

@@ -493,7 +493,7 @@ void AiTrainer::initCsvLog() {
         bool fileExistsAndHasData = std::filesystem::exists(p) && std::filesystem::file_size(p) > 0;
         std::ofstream f(m_config.logCsvFile, std::ios::app);
         if (f.is_open() && !fileExistsAndHasData) {
-            f << "gen,best_fitness,avg_fitness,winrate_vs_baseline,matches,wall_ms,"
+            f << "gen,best_fitness,avg_fitness,winrate_vs_baseline,commander_deaths,matches,wall_ms,"
               << "decisionIntervalTicks,aggression,retreatHpRatio,commanderSafeRadiusTiles,"
               << "artilleryStandOffMargin,artilleryIdealRangeRatio,scoutingWeight,focusFireWeight,"
               << "targetMemoryTicks,scoutingGroupCount\n";
@@ -502,7 +502,7 @@ void AiTrainer::initCsvLog() {
 }
 
 void AiTrainer::logCsvGeneration(uint32_t gen, float bestFit, float avgFit, float winRateVsBase,
-                                int matches, double wallMs, const AiParams& bestP) {
+                                int commanderDeaths, int matches, double wallMs, const AiParams& bestP) {
     if (m_config.logCsvFile.empty()) return;
 
     try {
@@ -512,6 +512,7 @@ void AiTrainer::logCsvGeneration(uint32_t gen, float bestFit, float avgFit, floa
               << std::fixed << std::setprecision(2) << bestFit << ","
               << avgFit << ","
               << (winRateVsBase * 100.0f) << ","
+              << commanderDeaths << ","
               << matches << ","
               << std::setprecision(1) << wallMs << ","
               << bestP.decisionIntervalTicks << ","
@@ -628,6 +629,7 @@ bool AiTrainer::runEvolution() {
 
     float allTimeBestValFitness = -999999.0f;
     float allTimeBestValWinRate = 0.0f;
+    int   allTimeBestValCmdDeaths = 0;
     uint32_t totalMatchesRun = 0;
     uint64_t allTimeSimTicks = 0;
 
@@ -805,11 +807,14 @@ bool AiTrainer::runEvolution() {
         std::vector<std::vector<MirrorPairResult>> resultsPerIndividual(population.size());
         std::vector<int> baselineWinsPerInd(population.size(), 0);
         std::vector<int> baselineMatchesPerInd(population.size(), 0);
+        std::vector<int> cmdDeathsPerInd(population.size(), 0);
 
         for (size_t t = 0; t < tasks.size(); ++t) {
             const auto& task = tasks[t];
             const auto& pairRes = taskResults[t];
             resultsPerIndividual[task.indIndex].push_back(pairRes);
+            cmdDeathsPerInd[task.indIndex] += (pairRes.matchA.didCandidateCommanderDie() ? 1 : 0) +
+                                             (pairRes.matchB.didCandidateCommanderDie() ? 1 : 0);
             if (task.isBaseline) {
                 baselineWinsPerInd[task.indIndex] += pairRes.candidateWins;
                 baselineMatchesPerInd[task.indIndex] += (pairRes.candidateWins + pairRes.opponentWins + pairRes.draws);
@@ -833,6 +838,7 @@ bool AiTrainer::runEvolution() {
             population[i].fitness = (pResults.empty()) ? 0.0f : (totalFit / static_cast<float>(pResults.size()));
             population[i].matchesWon = totalWins;
             population[i].totalMatches = totalM;
+            population[i].commanderDeaths = cmdDeathsPerInd[i];
 
             if (baselineMatchesPerInd[i] > 0) {
                 population[i].winRateVsBaseline = static_cast<float>(baselineWinsPerInd[i]) / static_cast<float>(baselineMatchesPerInd[i]);
@@ -843,14 +849,18 @@ bool AiTrainer::runEvolution() {
             sumFitness += population[i].fitness;
         }
 
-        // 3. Sắp xếp quần thể giảm dần theo fitness
+        // 3. Sắp xếp quần thể giảm dần: ưu tiên winrate vs baseline cao hơn, fitness làm tiêu chí phụ
         std::sort(population.begin(), population.end(), [](const Individual& a, const Individual& b) {
+            if (std::abs(a.winRateVsBaseline - b.winRateVsBaseline) > 1e-4f) {
+                return a.winRateVsBaseline > b.winRateVsBaseline;
+            }
             return a.fitness > b.fitness;
         });
 
         float genBestFitness = population[0].fitness;
         float genAvgFitness  = sumFitness / static_cast<float>(population.size());
         float genBestWinVsBase = population[0].winRateVsBaseline;
+        int   genBestCmdDeaths = population[0].commanderDeaths;
 
         auto tGenEnd = std::chrono::steady_clock::now();
         double genWallMs = std::chrono::duration<double, std::milli>(tGenEnd - tGenStart).count();
@@ -870,20 +880,22 @@ bool AiTrainer::runEvolution() {
         }
 
         std::cout << ">>> [GEN " << std::setw(2) << gen << "/" << m_config.generations << "] "
-                  << "BestFit: " << std::fixed << std::setprecision(1) << genBestFitness << " | "
+                  << "WinVsBase: " << std::fixed << std::setprecision(1) << (genBestWinVsBase * 100.0f) << "% | "
+                  << "CmdDeaths: " << genBestCmdDeaths << " | "
+                  << "BestFit: " << std::setprecision(1) << genBestFitness << " | "
                   << "AvgFit: " << genAvgFitness << " | "
-                  << "WinVsBase: " << std::setprecision(1) << (genBestWinVsBase * 100.0f) << "% | "
                   << "Time: " << std::setprecision(0) << genWallMs << "ms\n";
 
         // Ghi CSV
         logCsvGeneration(gen, genBestFitness, genAvgFitness, genBestWinVsBase,
-                         matchesThisGen, genWallMs, population[0].params);
+                         genBestCmdDeaths, matchesThisGen, genWallMs, population[0].params);
 
         // 4. Đánh giá lại top-3 trên bộ seed CỐ ĐỊNH (validationSeeds) vs baseline
         size_t topK = std::min<size_t>(3, population.size());
         size_t bestValIdx = 0;
         float bestValFitness = -999999.0f;
-        float bestValWinRate = 0.0f;
+        float bestValWinRate = -1.0f;
+        int   bestValCmdDeaths = 999999;
 
         std::cout << "  [*] Danh gia Validation top-" << topK << " tren " << validationSeeds.size()
                   << " seed CO DINH vs Baseline...\n";
@@ -892,6 +904,7 @@ bool AiTrainer::runEvolution() {
             float valFitSum = 0.0f;
             int valWins = 0;
             int valTotal = 0;
+            int valCmdDeaths = 0;
 
             for (uint64_t vSeed : validationSeeds) {
                 MirrorPairResult valPair = evaluatePair(population[k].params, baselineParams, vSeed,
@@ -902,6 +915,8 @@ bool AiTrainer::runEvolution() {
                 valFitSum += valPair.totalFitness;
                 valWins += valPair.candidateWins;
                 valTotal += (valPair.candidateWins + valPair.opponentWins + valPair.draws);
+                valCmdDeaths += (valPair.matchA.didCandidateCommanderDie() ? 1 : 0) +
+                                (valPair.matchB.didCandidateCommanderDie() ? 1 : 0);
             }
 
             float avgValFit = (validationSeeds.empty()) ? 0.0f : (valFitSum / static_cast<float>(validationSeeds.size()));
@@ -909,24 +924,51 @@ bool AiTrainer::runEvolution() {
 
             std::cout << "      Top #" << (k + 1) << " Candidate: ValWinRate = "
                       << std::fixed << std::setprecision(1) << (wr * 100.0f) << "% ("
-                      << valWins << "/" << valTotal << ") | ValFit = "
+                      << valWins << "/" << valTotal << ") | CmdDeaths = "
+                      << valCmdDeaths << " | ValFit = "
                       << std::setprecision(1) << avgValFit << "\n";
 
-            if (avgValFit > bestValFitness) {
+            // Chọn best theo winrate validation trước, fitness làm tiêu chí phụ
+            bool isBetter = false;
+            if (k == 0) {
+                isBetter = true;
+            } else if (wr > bestValWinRate + 1e-4f) {
+                isBetter = true;
+            } else if (std::abs(wr - bestValWinRate) <= 1e-4f) {
+                if (avgValFit > bestValFitness) {
+                    isBetter = true;
+                }
+            }
+
+            if (isBetter) {
                 bestValFitness = avgValFit;
                 bestValWinRate = wr;
+                bestValCmdDeaths = valCmdDeaths;
                 bestValIdx = k;
             }
         }
 
-        std::cout << ">>> [GEN " << std::setw(2) << gen << " VALIDATION] Best Top-3 WinRate: "
-                  << std::fixed << std::setprecision(1) << (bestValWinRate * 100.0f) << "% | ValFit: "
+        std::cout << ">>> [GEN " << std::setw(2) << gen << " VALIDATION] Best Top-3: WinRate: "
+                  << std::fixed << std::setprecision(1) << (bestValWinRate * 100.0f) << "% | CmdDeaths: "
+                  << bestValCmdDeaths << " | ValFit: "
                   << bestValFitness << "\n";
 
-        // Cập nhật All-Time Best Params CHỈ theo kết quả validation này
-        if (bestValFitness > allTimeBestValFitness || gen == 1) {
+        // Cập nhật All-Time Best Params CHỈ theo kết quả validation này (ưu tiên winrate trước, fitness phụ)
+        bool isRecord = false;
+        if (gen == 1) {
+            isRecord = true;
+        } else if (bestValWinRate > allTimeBestValWinRate + 1e-4f) {
+            isRecord = true;
+        } else if (std::abs(bestValWinRate - allTimeBestValWinRate) <= 1e-4f) {
+            if (bestValFitness > allTimeBestValFitness) {
+                isRecord = true;
+            }
+        }
+
+        if (isRecord) {
             allTimeBestValFitness = bestValFitness;
             allTimeBestValWinRate = bestValWinRate;
+            allTimeBestValCmdDeaths = bestValCmdDeaths;
             m_bestParams = population[bestValIdx].params;
 
             m_bestMetadata.generation = gen;
@@ -938,7 +980,9 @@ bool AiTrainer::runEvolution() {
 
             if (!m_config.outBestFile.empty()) {
                 if (saveTrainedAiProfile(m_config.outBestFile, m_bestParams, m_bestMetadata)) {
-                    std::cout << "  [*] Dat ky luc Validation moi! Da cap nhat profile vao: "
+                    std::cout << "  [*] Dat ky luc Validation moi (WinRate: "
+                              << std::fixed << std::setprecision(1) << (allTimeBestValWinRate * 100.0f)
+                              << "%, Fitness: " << allTimeBestValFitness << ")! Da cap nhat profile vao: "
                               << m_config.outBestFile << "\n";
                 }
             }
@@ -1002,8 +1046,9 @@ bool AiTrainer::runEvolution() {
               << "  - Thoi gian thuc hien: " << std::fixed << std::setprecision(1) << totalSeconds << "s\n"
               << "  - Toc do mo phong trung binh: " << std::setprecision(0) << avgTps << " ticks/sec ("
               << std::setprecision(1) << avgRealtime << "x realtime)\n"
-              << "  - Best Validation Fitness dat duoc: " << allTimeBestValFitness << "\n"
               << "  - Best Validation WinRate vs Baseline: " << (allTimeBestValWinRate * 100.0f) << "%\n"
+              << "  - Best Validation Commander Deaths: " << allTimeBestValCmdDeaths << "\n"
+              << "  - Best Validation Fitness dat duoc: " << allTimeBestValFitness << "\n"
               << "  - Profile xuat sac nhat da luu tai: " << m_config.outBestFile << "\n"
               << "========================================================================\n";
 
@@ -1117,8 +1162,10 @@ bool AiTrainer::runAdaptation() {
 
         // Ghi log
         float winRate = pair.getWinRate();
+        int cmdDeathsInPair = (pair.matchA.didCandidateCommanderDie() ? 1 : 0) +
+                              (pair.matchB.didCandidateCommanderDie() ? 1 : 0);
         logCsvGeneration(cycle, pair.totalFitness, pair.totalFitness, winRate,
-                         2, wallMs, currentCandidate);
+                         cmdDeathsInPair, 2, wallMs, currentCandidate);
 
         // Cập nhật nếu đạt kỷ lục
         if (pair.totalFitness > allTimeBestFitness || cycle == 1) {
