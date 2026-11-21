@@ -315,6 +315,105 @@ void testMiniEvolutionEndToEnd() {
     std::cout << "  -> PASSED: Mini Evolution 2 the he x 4 ca the x 2 luong chay on dinh 100% khong data race!\n";
 }
 
+// =============================================================================
+// TEST 5: Simulation Determinism Anti-Noise Test
+// =============================================================================
+void testSimulationDeterminismAntiNoise() {
+    std::cout << "[TestTrain] 5. Kiem tra chong nhieu & tat dinh 100% tren cung seed (Test 5)...\n";
+    constexpr uint64_t TEST_SEED = 0xABCD1234EF56ULL;
+    constexpr uint64_t RUN_TICKS = 400;
+
+    AiParams pA;
+    pA.aggression = 0.95f;
+    pA.artilleryStandOffMargin = 2.5f;
+    clampParams(pA);
+
+    AiParams pB;
+    pB.aggression = 0.45f;
+    pB.artilleryStandOffMargin = 4.5f;
+    clampParams(pB);
+
+    SingleMatchResult r1 = runSimulationMatch(pA, pB, true, TEST_SEED, RUN_TICKS);
+    SingleMatchResult r2 = runSimulationMatch(pA, pB, true, TEST_SEED, RUN_TICKS);
+
+    assert(r1.finalTick == r2.finalTick);
+    assert(r1.endKind == r2.endKind);
+    assert(r1.endReason == r2.endReason);
+    assert(r1.isWin == r2.isWin);
+    assert(r1.isLoss == r2.isLoss);
+    assert(r1.isDraw == r2.isDraw);
+    assert(r1.candidateTotalTroops == r2.candidateTotalTroops);
+    assert(r1.opponentTotalTroops == r2.opponentTotalTroops);
+    assert(r1.candidateAliveUnits == r2.candidateAliveUnits);
+    assert(r1.opponentAliveUnits == r2.opponentAliveUnits);
+    assert(r1.candidateCommanderHp == r2.candidateCommanderHp);
+    assert(r1.opponentCommanderHp == r2.opponentCommanderHp);
+    assert(r1.candidateCommandsIssued == r2.candidateCommandsIssued);
+    assert(r1.opponentCommandsIssued == r2.opponentCommandsIssued);
+    assert(std::abs(r1.fitnessScore - r2.fitnessScore) < 1e-5f);
+
+    std::cout << "  -> PASSED: 2 tran chay doc lap voi cung seed va params hoan toan khong bi nhieu, ket qua khop 100%!\n";
+}
+
+// =============================================================================
+// TEST 6: Best Selection Based on Validation Test
+// =============================================================================
+void testBestSelectionBasedOnValidation() {
+    std::cout << "[TestTrain] 6. Kiem tra Best Profile duoc chon nghiem ngat theo Validation (Test 6)...\n";
+
+    const std::string outBest = "test_val_best.json";
+    std::filesystem::remove(outBest);
+
+    TrainerConfig cfg;
+    cfg.mode = TrainingMode::Evolution;
+    cfg.generations = 2;
+    cfg.populationSize = 4;
+    cfg.seedsPerGen = 1;
+    cfg.validationSeeds = 8;
+    cfg.maxTicks = 150;
+    cfg.threadCount = 2;
+    cfg.masterSeed = 0x1234567890ULL;
+    cfg.outBestFile = outBest;
+    cfg.quietOutput = true;
+
+    AiTrainer trainer(cfg);
+    bool ok = trainer.train();
+    assert(ok && "Train phai thanh cong!");
+
+    assert(std::filesystem::exists(outBest));
+    AiParams savedBest;
+    AiTrainingMetadata savedMeta;
+    assert(loadTrainedAiProfile(outBest, savedBest, &savedMeta));
+
+    // Tai tao bo validationSeeds theo masterSeed de kiem tra lai
+    uint32_t numVal = std::max(8u, cfg.validationSeeds);
+    std::vector<uint64_t> valSeeds(numVal);
+    mapgen::FastRng valRng(cfg.masterSeed ^ 0xBA11DA7E5EEDULL);
+    for (uint32_t v = 0; v < numVal; ++v) {
+        valSeeds[v] = valRng.next64();
+    }
+
+    AiParams baselineParams{};
+    float valFitSum = 0.0f;
+    int valWins = 0;
+    int valTotal = 0;
+    for (uint64_t vs : valSeeds) {
+        MirrorPairResult pair = evaluatePair(savedBest, baselineParams, vs, cfg.maxTicks);
+        valFitSum += pair.totalFitness;
+        valWins += pair.candidateWins;
+        valTotal += (pair.candidateWins + pair.opponentWins + pair.draws);
+    }
+    float expectedAvgFit = valFitSum / static_cast<float>(valSeeds.size());
+    float expectedWinRate = (valTotal > 0) ? (static_cast<float>(valWins) / static_cast<float>(valTotal)) : 0.0f;
+
+    // Khang dinh diem luu trong metadata khop chinh xac voi validation fitness tinh toan doc lap
+    assert(std::abs(savedMeta.fitness - expectedAvgFit) < 1e-3f);
+    assert(std::abs(savedMeta.winRateVsBaseline - expectedWinRate) < 1e-3f);
+
+    std::filesystem::remove(outBest);
+    std::cout << "  -> PASSED: Best profile duoc luu da duoc kiem chung trung khop 100% voi ket qua Validation doc lap!\n";
+}
+
 int main() {
     std::cout << "========================================================================\n"
               << "War Strategy - AI Self-Play & Trainer Unit Tests (M9)\n"
@@ -324,9 +423,11 @@ int main() {
     testMirrorMatchDeterminism();
     testPostLossAdaptation();
     testMiniEvolutionEndToEnd();
+    testSimulationDeterminismAntiNoise();
+    testBestSelectionBasedOnValidation();
 
     std::cout << "\n========================================================================\n"
-              << "[PASS] TOAN BO 4/4 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
+              << "[PASS] TOAN BO 6/6 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
               << "========================================================================\n";
     return 0;
 }
