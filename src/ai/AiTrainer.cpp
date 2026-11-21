@@ -615,8 +615,11 @@ bool AiTrainer::runEvolution() {
     std::vector<AiParams> hallOfFame;
     AiParams baselineParams{};
 
-    // Bộ seed validation cố định (ít nhất 8 seed theo masterSeed)
-    uint32_t numValSeeds = std::max(8u, m_config.validationSeeds);
+    // Bộ seed validation cố định (cho phép giá trị nhỏ hơn 8, cảnh báo nếu < 4)
+    uint32_t numValSeeds = m_config.validationSeeds;
+    if (numValSeeds < 4) {
+        std::cerr << "[Warning] validationSeeds = " << numValSeeds << " (< 4); danh gia validation co the bi nhieu!\n";
+    }
     std::vector<uint64_t> validationSeeds(numValSeeds);
     mapgen::FastRng valRng(m_config.masterSeed ^ 0xBA11DA7E5EEDULL);
     for (uint32_t v = 0; v < numValSeeds; ++v) {
@@ -999,8 +1002,8 @@ bool AiTrainer::runEvolution() {
               << "  - Thoi gian thuc hien: " << std::fixed << std::setprecision(1) << totalSeconds << "s\n"
               << "  - Toc do mo phong trung binh: " << std::setprecision(0) << avgTps << " ticks/sec ("
               << std::setprecision(1) << avgRealtime << "x realtime)\n"
-              << "  - Best Fitness dat duoc: " << m_bestMetadata.fitness << "\n"
-              << "  - Ty le thang vs Baseline: " << (m_bestMetadata.winRateVsBaseline * 100.0f) << "%\n"
+              << "  - Best Validation Fitness dat duoc: " << allTimeBestValFitness << "\n"
+              << "  - Best Validation WinRate vs Baseline: " << (allTimeBestValWinRate * 100.0f) << "%\n"
               << "  - Profile xuat sac nhat da luu tai: " << m_config.outBestFile << "\n"
               << "========================================================================\n";
 

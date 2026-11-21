@@ -386,7 +386,7 @@ void testBestSelectionBasedOnValidation() {
     assert(loadTrainedAiProfile(outBest, savedBest, &savedMeta));
 
     // Tai tao bo validationSeeds theo masterSeed de kiem tra lai
-    uint32_t numVal = std::max(8u, cfg.validationSeeds);
+    uint32_t numVal = cfg.validationSeeds;
     std::vector<uint64_t> valSeeds(numVal);
     mapgen::FastRng valRng(cfg.masterSeed ^ 0xBA11DA7E5EEDULL);
     for (uint32_t v = 0; v < numVal; ++v) {
