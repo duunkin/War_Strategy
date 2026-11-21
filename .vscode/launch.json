@@ -1,0 +1,129 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "war_strategy",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/War_Strategy.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "externalTerminal",
+      "preLaunchTask": "CMake: Build war_strategy"
+    },
+    {
+      "name": "war_strategy_headless",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/War_Strategy_Headless.exe",
+      "args": ["--matches", "1", "--ticks", "5000"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal",
+      "preLaunchTask": "CMake: Build war_strategy_headless"
+    },
+    {
+      "name": "war_strategy_train",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/War_Strategy_Train.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal",
+      "preLaunchTask": "CMake: Build war_strategy_train"
+    },
+    {
+      "name": "test_mapgen",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_mapgen.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "test_units",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_units.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "test_pathfinding",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_pathfinding.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "test_combat",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_combat.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "test_vision",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_vision.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "test_ai",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_ai.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "test_replay",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_replay.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "test_train",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/cmake-build-debug/test_train.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+gen,best_fitness,avg_fitness,winrate_vs_baseline,matches,wall_ms,decisionIntervalTicks,aggression,retreatHpRatio,commanderSafeRadiusTiles,artilleryStandOffMargin,artilleryIdealRangeRatio,scoutingWeight,focusFireWeight,targetMemoryTicks,scoutingGroupCount
+1,356.72,6.89,75.00,32,186411.7,21,0.750,0.300,11.809,2.000,0.860,0.893,1.200,140,3

@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CMake: Build all",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "cmake-build-debug", "--parallel"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "CMake: Build war_strategy",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "cmake-build-debug", "--target", "War_Strategy"],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "CMake: Build war_strategy_headless",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "cmake-build-debug", "--target", "War_Strategy_Headless"],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "CMake: Build war_strategy_train",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "cmake-build-debug", "--target", "War_Strategy_Train"],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Run all C tests (ctest)",
+      "type": "shell",
+      "command": "ctest",
+      "args": ["--test-dir", "cmake-build-debug", "--output-on-failure"],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "dependsOn": "CMake: Build all",
+      "problemMatcher": []
+    }
+  ]
+}

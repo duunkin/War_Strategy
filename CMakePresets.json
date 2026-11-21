@@ -1,0 +1,66 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Debug (Ninja)",
+      "description": "Default Debug build using Ninja",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake-build-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "all",
+      "displayName": "Build All",
+      "configurePreset": "default"
+    },
+    {
+      "name": "war_strategy",
+      "displayName": "War_Strategy",
+      "configurePreset": "default",
+      "targets": ["War_Strategy"]
+    },
+    {
+      "name": "war_strategy_headless",
+      "displayName": "War_Strategy_Headless",
+      "configurePreset": "default",
+      "targets": ["War_Strategy_Headless"]
+    },
+    {
+      "name": "war_strategy_train",
+      "displayName": "War_Strategy_Train",
+      "configurePreset": "default",
+      "targets": ["War_Strategy_Train"]
+    },
+    {
+      "name": "all_c_test",
+      "displayName": "All C Test",
+      "configurePreset": "default",
+      "targets": ["all_c_test"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "all-c-tests",
+      "displayName": "All C Tests",
+      "description": "Run all C test suites via CTest",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    }
+  ]
+}

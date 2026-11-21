@@ -1,0 +1,480 @@
+{
+  "version": "0.1",
+  "_doc": "Bảng thông số tham chiếu v0.1 cho game chiến thuật C++ (suy ra từ Doc 'Game chiến nhao bằng não' + sim Gemini + các quyết định của chủ dự án). Giá trị đánh dấu proposed=... là đề xuất của Claude, cần chủ dự án duyệt.",
+  "scale": {
+    "tileMeters": 50,
+    "tilePixels": 32,
+    "mapTiles": [
+      128,
+      96
+    ],
+    "tickRate": 20,
+    "note": "Tốc độ mặt đất bị nén ~7 lần so với thực tế, máy bay gần đúng thực tế; speed = sim x1.12 để bộ binh đi ngang bản đồ ~60 giây (riêng tàu theo tỉ lệ km/h của Doc)."
+  },
+  "totals": {
+    "infantryPerSide": 30000,
+    "otherUnitsPerSide": 610,
+    "dotsPerSide": 30
+  },
+  "matchDurationSec": 3600,
+  "vision": {
+    "airElevation": 4,
+    "commanderRevealTicks": 40
+  },
+  "combatModel": {
+    "dotHp": "N_alive x hpPerUnit; N_alive = ceil(hpDot / hpPerUnit)",
+    "dotVolley": "mỗi lần bắn: N_alive phát, mỗi phát dmg x rounds x accuracy (sau khi qua giáp)",
+    "ammo": {
+      "AP": "xuyên giáp: giáp>=30 thưởng +20%, giảm sát thương = min(72%, giáp x 0.8%)",
+      "HE": "đạn nổ: giáp<20 thưởng +45%; giáp>=20 giảm = min(84%, giáp x 1.4%); trúng chấm mục tiêu và các chấm sát bên trong splash (sát bên = 55% sát thương)"
+    },
+    "proposedSmallArms": "proposed: bộ binh dùng đạn thường nhưng sát thương x0.2 vs giáp>=30, x0.5 vs giáp 20-29",
+    "antiAirBonus": "Gepard, Su-57 x1.5 vs máy bay",
+    "targeting": {
+      "ships": "tàu chỉ bị tàu bắn; tàu bắn được tàu và mục tiêu trên bờ, không bắn máy bay (proposed)",
+      "air": "Su-57 bắn được trên không, bộ; B-2 chỉ bắn bộ; không máy bay nào bắn được tàu"
+    }
+  },
+  "ambush": {
+    "idleTicks": 40,
+    "detectRangeTiles": 2.5,
+    "revealTicks": 60,
+    "firstStrikeMult": 1.2,
+    "terrains": [
+      "FOREST",
+      "HILL",
+      "MOUNTAIN"
+    ],
+    "note": "proposed: không kích hoạt phục kích ở tick 0 (sim cũ để idleTicks=40 ngay từ đầu)"
+  },
+  "terrain": {
+    "DEEP_SEA": {
+      "id": 0,
+      "name": "Biển sâu",
+      "elevation": 0,
+      "speed": {
+        "infantry": 0,
+        "vehicle": 0,
+        "ship": 1.0,
+        "air": 1.0
+      },
+      "defBonus": 0.0,
+      "visionMod": 0,
+      "rangeMod": 0,
+      "ambush": false
+    },
+    "COASTAL_SEA": {
+      "id": 1,
+      "name": "Biển ven bờ",
+      "elevation": 0,
+      "speed": {
+        "infantry": 0,
+        "vehicle": 0,
+        "ship": 0.9,
+        "air": 1.0
+      },
+      "defBonus": 0.0,
+      "visionMod": 0,
+      "rangeMod": 0,
+      "ambush": false
+    },
+    "PLAIN": {
+      "id": 2,
+      "name": "Đồng bằng",
+      "elevation": 0,
+      "speed": {
+        "infantry": 1.0,
+        "vehicle": 1.0,
+        "ship": 0,
+        "air": 1.0
+      },
+      "defBonus": 0.0,
+      "visionMod": 0,
+      "rangeMod": 0,
+      "ambush": false
+    },
+    "FOREST": {
+      "id": 3,
+      "name": "Rừng rậm",
+      "elevation": 1,
+      "speed": {
+        "infantry": 0.9,
+        "vehicle": 0.65,
+        "ship": 0,
+        "air": 1.0
+      },
+      "defBonus": 0.25,
+      "visionMod": -1,
+      "rangeMod": 0,
+      "ambush": true
+    },
+    "HILL": {
+      "id": 4,
+      "name": "Đồi cao",
+      "elevation": 2,
+      "speed": {
+        "infantry": 0.8,
+        "vehicle": 0.7,
+        "ship": 0,
+        "air": 1.0
+      },
+      "defBonus": 0.3,
+      "visionMod": 2,
+      "rangeMod": 1,
+      "ambush": true
+    },
+    "MOUNTAIN": {
+      "id": 5,
+      "name": "Núi hiểm trở",
+      "elevation": 3,
+      "speed": {
+        "infantry": 0.5,
+        "vehicle": 0,
+        "ship": 0,
+        "air": 1.0
+      },
+      "defBonus": 0.45,
+      "visionMod": 3,
+      "rangeMod": 2,
+      "ambush": true
+    },
+    "RIVER": {
+      "id": 6,
+      "name": "Sông / Hồ",
+      "elevation": 0,
+      "speed": {
+        "infantry": 0.45,
+        "vehicle": 0,
+        "ship": 0,
+        "air": 1.0
+      },
+      "defBonus": -0.15,
+      "visionMod": 0,
+      "rangeMod": 0,
+      "ambush": false
+    },
+    "FORD": {
+      "id": 7,
+      "name": "Bến cạn",
+      "elevation": 0,
+      "speed": {
+        "infantry": 0.7,
+        "vehicle": 0.55,
+        "ship": 0,
+        "air": 1.0
+      },
+      "defBonus": -0.15,
+      "visionMod": 0,
+      "rangeMod": 0,
+      "ambush": false
+    }
+  },
+  "units": {
+    "COMMANDER": {
+      "name": "Tư lệnh",
+      "domain": "LAND",
+      "unitsPerDot": 1,
+      "dotsPerSide": 1,
+      "totalPerSide": 1,
+      "hpPerUnit": 100,
+      "armor": 0,
+      "speedTilesPerSec": 2.46,
+      "rangeTiles": 0.8,
+      "visionTiles": 9,
+      "cooldownTicks": 24,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 50,
+          "splash": 0
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": false,
+      "stealthRevealRangeTiles": 1.0,
+      "iconSizeTiles": 1
+    },
+    "INFANTRY": {
+      "name": "Bộ binh",
+      "domain": "LAND",
+      "unitsPerDot": 3000,
+      "dotsPerSide": 10,
+      "totalPerSide": 30000,
+      "hpPerUnit": 100,
+      "armor": 8,
+      "speedTilesPerSec": 2.13,
+      "rangeTiles": 5,
+      "visionTiles": 7,
+      "cooldownTicks": 20,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 3,
+          "splash": 0,
+          "smallArms": true
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "LEOPARD_2A": {
+      "name": "Leopard 2A",
+      "domain": "LAND",
+      "unitsPerDot": 40,
+      "dotsPerSide": 2,
+      "totalPerSide": 80,
+      "hpPerUnit": 2000,
+      "armor": 68,
+      "speedTilesPerSec": 2.69,
+      "rangeTiles": 7,
+      "visionTiles": 7,
+      "cooldownTicks": 32,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 200,
+          "splash": 0
+        },
+        {
+          "ammo": "HE",
+          "dmg": 200,
+          "splash": 1.0
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "T14_ARMATA": {
+      "name": "T-14 Armata",
+      "domain": "LAND",
+      "unitsPerDot": 50,
+      "dotsPerSide": 2,
+      "totalPerSide": 100,
+      "hpPerUnit": 1750,
+      "armor": 54,
+      "speedTilesPerSec": 3.14,
+      "rangeTiles": 7,
+      "visionTiles": 8,
+      "cooldownTicks": 28,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 150,
+          "splash": 0
+        },
+        {
+          "ammo": "HE",
+          "dmg": 150,
+          "splash": 1.0
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "PUMA": {
+      "name": "Puma",
+      "domain": "LAND",
+      "unitsPerDot": 50,
+      "dotsPerSide": 4,
+      "totalPerSide": 200,
+      "hpPerUnit": 1250,
+      "armor": 26,
+      "speedTilesPerSec": 3.81,
+      "rangeTiles": 6,
+      "visionTiles": 9,
+      "cooldownTicks": 16,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 100,
+          "splash": 0
+        },
+        {
+          "ammo": "HE",
+          "dmg": 100,
+          "splash": 1.0
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "CAESAR": {
+      "name": "Caesar",
+      "domain": "LAND",
+      "unitsPerDot": 25,
+      "dotsPerSide": 2,
+      "totalPerSide": 50,
+      "hpPerUnit": 1000,
+      "armor": 12,
+      "speedTilesPerSec": 2.35,
+      "rangeTiles": 14,
+      "visionTiles": 6,
+      "cooldownTicks": 50,
+      "weapons": [
+        {
+          "ammo": "HE",
+          "dmg": 200,
+          "splash": 1.5
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "GEPARD": {
+      "name": "Gepard",
+      "domain": "LAND",
+      "unitsPerDot": 25,
+      "dotsPerSide": 2,
+      "totalPerSide": 50,
+      "hpPerUnit": 750,
+      "armor": 28,
+      "speedTilesPerSec": 3.02,
+      "rangeTiles": 9,
+      "visionTiles": 10,
+      "cooldownTicks": 40,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 20,
+          "splash": 0,
+          "rounds": 50,
+          "accuracy": 0.2
+        }
+      ],
+      "canTargetAir": true,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "SU57": {
+      "name": "Su-57",
+      "domain": "AIR",
+      "elevation": 4,
+      "unitsPerDot": 25,
+      "dotsPerSide": 2,
+      "totalPerSide": 50,
+      "hpPerUnit": 500,
+      "armor": 16,
+      "speedTilesPerSec": 6.27,
+      "rangeTiles": 8,
+      "visionTiles": 12,
+      "cooldownTicks": 60,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 200,
+          "splash": 0,
+          "accuracy": 0.6
+        }
+      ],
+      "canTargetAir": true,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "B2_SPIRIT": {
+      "name": "B-2 Spirit",
+      "domain": "AIR",
+      "elevation": 4,
+      "unitsPerDot": 10,
+      "dotsPerSide": 1,
+      "totalPerSide": 10,
+      "hpPerUnit": 1000,
+      "armor": 14,
+      "speedTilesPerSec": 4.93,
+      "rangeTiles": 6,
+      "visionTiles": 10,
+      "cooldownTicks": 55,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 400,
+          "splash": 0
+        },
+        {
+          "ammo": "HE",
+          "dmg": 400,
+          "splash": 2.0
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": false
+    },
+    "FFM3_MOGAMI": {
+      "name": "JS Shiro FFM-3 (Mogami)",
+      "domain": "SEA",
+      "unitsPerDot": 10,
+      "dotsPerSide": 2,
+      "totalPerSide": 20,
+      "hpPerUnit": 4000,
+      "armor": 42,
+      "speedTilesPerSec": 2.36,
+      "rangeTiles": 11,
+      "visionTiles": 11,
+      "cooldownTicks": 26,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 300,
+          "splash": 0
+        },
+        {
+          "ammo": "HE",
+          "dmg": 300,
+          "splash": 1.5
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": true
+    },
+    "DD151_ASAGIRI": {
+      "name": "JS DD-151 (Asagiri)",
+      "domain": "SEA",
+      "unitsPerDot": 25,
+      "dotsPerSide": 2,
+      "totalPerSide": 50,
+      "hpPerUnit": 3500,
+      "armor": 55,
+      "speedTilesPerSec": 3.15,
+      "rangeTiles": 13,
+      "visionTiles": 11,
+      "cooldownTicks": 34,
+      "weapons": [
+        {
+          "ammo": "AP",
+          "dmg": 150,
+          "splash": 0
+        },
+        {
+          "ammo": "HE",
+          "dmg": 150,
+          "splash": 1.0
+        }
+      ],
+      "canTargetAir": false,
+      "canTargetGround": true,
+      "canTargetSea": true
+    }
+  },
+  "victory": [
+    "tư lệnh địch chết",
+    "địch hết quân (chỉ còn tư lệnh)",
+    "hết giờ: bên có tổng số quân gộp nhiều hơn thắng",
+    "hòa nếu quân hai bên cùng hết hoặc bằng nhau"
+  ],
+  "proposed": {
+    "infantry": "máu 100/người, sát thương 3, tầm 5 ô (250m), tầm nhìn 7, giáp 8, cooldown 20 tick, tốc độ 2.13 ô/s",
+    "tuningFlags": [
+      "Gepard accuracy 0.2, cooldown 40",
+      "Su-57 accuracy 0.6, cooldown 60 (sim cũ 20)",
+      "Asagiri nhanh hơn Mogami theo Doc (sim cũ ngược lại)",
+      "Tư lệnh 2.46 ô/s (Doc: 40 km/h)"
+    ]
+  }
+}
