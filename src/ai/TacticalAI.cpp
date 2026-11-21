@@ -247,14 +247,14 @@ std::vector<sim::Command> TacticalAI::plan(const sim::WorldSim& sim) {
         groundStrikeUnits.insert(groundStrikeUnits.end(), pumas.begin(), pumas.end());
         groundStrikeUnits.insert(groundStrikeUnits.end(), heavyTanks.begin(), heavyTanks.end());
         groundStrikeUnits.insert(groundStrikeUnits.end(), infantry.begin(), infantry.end());
-        planInfantryAndArmor(sim, groundStrikeUnits, commands);
+        planInfantryAndArmor(sim, groundStrikeUnits, commander, commands);
     } else if (subPhase == 2) {
         std::vector<const sim::Unit*> fastStrikeUnits;
         fastStrikeUnits.insert(fastStrikeUnits.end(), pumas.begin(), pumas.end());
         fastStrikeUnits.insert(fastStrikeUnits.end(), heavyTanks.begin(), heavyTanks.end());
-        planInfantryAndArmor(sim, fastStrikeUnits, commands);
+        planInfantryAndArmor(sim, fastStrikeUnits, commander, commands);
     } else if (subPhase == 3) {
-        planInfantryAndArmor(sim, infantry, commands);
+        planInfantryAndArmor(sim, infantry, commander, commands);
     }
     bool groundAction = (commands.size() > cmdBeforeGround);
 
@@ -394,10 +394,10 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
         }
     }
 
-    bool isDamaged = (commander.getHp() < commander.getMaxHp());
+    bool isSeverelyDamaged = (commander.getHp() < commander.getMaxHp() / 2);
 
-    // Nếu có địch áp sát nguy hiểm hoặc bị mất máu -> Tháo chạy ngay lập tức!
-    if (m_params.enableCommanderRetreat && (threatCount > 0 || isDamaged)) {
+    // Nếu có địch áp sát trong bán kính nguy hiểm hoặc mất máu nặng -> Tháo chạy ngay lập tức!
+    if (m_params.enableCommanderRetreat && (threatCount > 0 || isSeverelyDamaged)) {
         int threatCenterX = (threatCount > 0) ? (threatSumX / threatCount) : (comX + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5));
         int threatCenterY = (threatCount > 0) ? (threatSumY / threatCount) : comY;
 
@@ -424,7 +424,8 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
         int homeBaseY = sim.getMap().getHeight() / 2;
         int dxHome = homeBaseX - comX;
         int dyHome = homeBaseY - comY;
-        if (dxHome * dxHome + dyHome * dyHome > 16 * 16) {
+        float maxAllowedDist = m_params.commanderSafeRadiusTiles;
+        if (static_cast<float>(dxHome * dxHome + dyHome * dyHome) > maxAllowedDist * maxAllowedDist) {
             sim::TileCoord retreatTarget = findSafeRetreatTile(sim, comX, comY, comX + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5), comY, sim::UnitDomain::Land, sim::UnitType::Commander, 3, 6);
             if (retreatTarget.x != comX || retreatTarget.y != comY) {
                 sim::Command cmd;
@@ -833,6 +834,7 @@ void TacticalAI::planNavy(const sim::WorldSim& sim,
 
 void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                                       const std::vector<const sim::Unit*>& strikeUnits,
+                                      const sim::Unit* commander,
                                       std::vector<sim::Command>& outCommands) {
     if (strikeUnits.empty()) return;
 
@@ -905,6 +907,17 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                     if (enemy.type == sim::UnitType::Caesar) priority = 4.0f;
                     else if (enemy.type == sim::UnitType::Puma) priority = 2.5f;
                     else if (enemy.type == sim::UnitType::Commander) priority = 5.0f;
+                }
+
+                // Bảo vệ Tư lệnh: Nếu địch xâm nhập vùng an toàn của Tư lệnh (theo commanderSafeRadiusTiles), tăng mạnh ưu tiên đánh chặn
+                if (commander) {
+                    int cdx = enemy.lastTileX - commander->getTileX();
+                    int cdy = enemy.lastTileY - commander->getTileY();
+                    float distCmdSq = static_cast<float>(cdx * cdx + cdy * cdy);
+                    float safeRadiusSq = m_params.commanderSafeRadiusTiles * m_params.commanderSafeRadiusTiles;
+                    if (distCmdSq <= safeRadiusSq) {
+                        priority += 5.0f;
+                    }
                 }
 
                 // Dồn hỏa lực (focusFireWeight): nhân vào điểm ưu tiên của mục tiêu đang bị nhiều đơn vị ta nhắm; nếu 1.0 thì giữ hành vi cũ
@@ -1002,7 +1015,10 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
         float attackRatio = std::clamp(0.25f + 0.75f * (m_params.aggression / 1.5f), 0.25f, 1.0f);
         int maxAttackers = std::max(1, static_cast<int>(std::round(combatUnits.size() * attackRatio)));
 
-        int rearX = (m_controlledFaction == sim::Faction::Enemy) ? (map.getWidth() - 12) : 12;
+        int cmdX = (commander) ? commander->getTileX() : ((m_controlledFaction == sim::Faction::Enemy) ? (map.getWidth() - 12) : 12);
+        int guardOffset = std::clamp(static_cast<int>(m_params.commanderSafeRadiusTiles * 0.45f), 2, 12);
+        int rearX = (m_controlledFaction == sim::Faction::Enemy) ? (cmdX - guardOffset) : (cmdX + guardOffset);
+        rearX = std::clamp(rearX, 2, map.getWidth() - 3);
 
         int combatIndex = 0;
         for (const auto* u : combatUnits) {

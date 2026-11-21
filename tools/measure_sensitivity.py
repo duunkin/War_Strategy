@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import sys
 import csv
+import argparse
 
 BASELINE = {
     "aggression": 0.75,
@@ -26,15 +27,17 @@ PERTURBATIONS = {
     "artilleryStandOffMargin": 6.0,
     "focusFireWeight": 3.0,
     "scoutingWeight": 2.2,
+    "commanderSafeRadiusTiles": 18.0,
     "enableCommanderRetreat": False,
     "enableUnitRetreat": False,
     "retreatHpRatio": 0.60,
-    "commanderSafeRadiusTiles": 16.0,
     "artilleryIdealRangeRatio": 0.55,
     "decisionIntervalTicks": 35,
     "targetMemoryTicks": 300,
     "scoutingGroupCount": 1,
 }
+
+DEFAULT_SEEDS = [12345, 67890, 42, 99999, 10101, 20202, 30303, 40404]
 
 def run_match(ai1_params, seed=12345, max_ticks=2400):
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f_ai1, \
@@ -77,58 +80,71 @@ def run_match(ai1_params, seed=12345, max_ticks=2400):
             os.remove(csv_path)
     return None
 
-def run_batch(ai1_params, seeds=[42, 99999], max_ticks=3000):
-    total_cmds = 0
-    total_troops = 0
-    total_ticks = 0
-    for s in seeds:
-        res = run_match(ai1_params, seed=s, max_ticks=max_ticks)
-        if not res:
-            return None
-        total_cmds += res["ai1_cmds"]
-        total_troops += res["ai1_troops"]
-        total_ticks += res["ticks"]
-    return {
-        "cmds": total_cmds,
-        "troops": total_troops,
-        "ticks": total_ticks
-    }
-
 def main():
-    print("=" * 88)
-    print("      WAR STRATEGY - PARAMETER SENSITIVITY BENCHMARK (HEADLESS)")
-    print("=" * 88)
-    print(f"{'Parameter':<26} | {'Baseline':<8} | {'Tested':<8} | {'Delta Cmds':<11} | {'Delta Troops':<13} | {'Status':<8}")
-    print("-" * 88)
+    parser = argparse.ArgumentParser(description="War Strategy - Parameter Sensitivity Benchmark")
+    parser.add_argument("--seeds", type=int, default=8, help="Number of seeds to evaluate (>=8)")
+    parser.add_argument("--max-ticks", type=int, default=2400, help="Max ticks per match")
+    args = parser.parse_args()
 
-    base_res = run_batch(BASELINE, seeds=[42, 99999], max_ticks=3000)
-    if not base_res:
-        print("Failed to run baseline simulation!")
-        sys.exit(1)
+    num_seeds = max(1, args.seeds)
+    if num_seeds <= len(DEFAULT_SEEDS):
+        seeds = DEFAULT_SEEDS[:num_seeds]
+    else:
+        seeds = list(DEFAULT_SEEDS)
+        for i in range(len(DEFAULT_SEEDS), num_seeds):
+            seeds.append(50000 + i * 1111)
+
+    print("=" * 105)
+    print(f"      WAR STRATEGY - PARAMETER SENSITIVITY BENCHMARK ({len(seeds)} SEEDS)")
+    print("=" * 105)
+    print(f"{'Parameter':<26} | {'Baseline':<8} | {'Tested':<8} | {'Delta Cmds':<11} | {'Delta Troops':<13} | {'Seed Diff':<11} | {'Status':<10}")
+    print("-" * 105)
+
+    base_results = {}
+    for s in seeds:
+        res = run_match(BASELINE, seed=s, max_ticks=args.max_ticks)
+        if not res:
+            print(f"Failed to run baseline simulation on seed {s}!")
+            sys.exit(1)
+        base_results[s] = res
+
+    base_total_cmds = sum(r["ai1_cmds"] for r in base_results.values())
+    base_total_troops = sum(r["ai1_troops"] for r in base_results.values())
 
     for param, test_val in PERTURBATIONS.items():
         perturbed = dict(BASELINE)
         perturbed[param] = test_val
-        test_res = run_batch(perturbed, seeds=[42, 99999], max_ticks=3000)
-        if not test_res:
-            print(f"{param:<26} | ERROR")
-            continue
-        
-        d_cmds = test_res["cmds"] - base_res["cmds"]
-        d_troops = test_res["troops"] - base_res["troops"]
-        d_ticks = test_res["ticks"] - base_res["ticks"]
-        
-        has_effect = (d_cmds != 0 or d_troops != 0 or d_ticks != 0)
-        status = "ACTIVE" if has_effect else "PASSIVE"
+
+        diff_count = 0
+        test_total_cmds = 0
+        test_total_troops = 0
+
+        for s in seeds:
+            test_res = run_match(perturbed, seed=s, max_ticks=args.max_ticks)
+            if not test_res:
+                continue
+            test_total_cmds += test_res["ai1_cmds"]
+            test_total_troops += test_res["ai1_troops"]
+            
+            b = base_results[s]
+            if (test_res["ai1_cmds"] != b["ai1_cmds"] or 
+                test_res["ai1_troops"] != b["ai1_troops"] or 
+                test_res["ticks"] != b["ticks"]):
+                diff_count += 1
+
+        d_cmds = test_total_cmds - base_total_cmds
+        d_troops = test_total_troops - base_total_troops
 
         base_str = str(BASELINE[param])
         test_str = str(test_val)
         d_cmds_str = f"{d_cmds:+d}"
         d_troops_str = f"{d_troops:+d}"
+        diff_str = f"{diff_count}/{len(seeds)}"
+        status = "ACTIVE" if diff_count > 0 else "PASSIVE"
 
-        print(f"{param:<26} | {base_str:<8} | {test_str:<8} | {d_cmds_str:<11} | {d_troops_str:<13} | {status:<8}")
+        print(f"{param:<26} | {base_str:<8} | {test_str:<8} | {d_cmds_str:<11} | {d_troops_str:<13} | {diff_str:<11} | {status:<10}")
 
-    print("=" * 88)
+    print("=" * 105)
 
 if __name__ == "__main__":
     main()

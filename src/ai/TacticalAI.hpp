@@ -73,6 +73,7 @@ private:
 
     void planInfantryAndArmor(const sim::WorldSim& sim,
                              const std::vector<const sim::Unit*>& strikeUnits,
+                             const sim::Unit* commander,
                              std::vector<sim::Command>& outCommands);
 
     void planArtilleryAndAntiAir(const sim::WorldSim& sim,
