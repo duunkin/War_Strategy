@@ -78,12 +78,12 @@ float calculateSingleMatchFitness(const SingleMatchResult& res, uint64_t maxTick
     timeRatio = std::clamp(timeRatio, 0.0f, 1.0f);
     float speedBonus = 1.0f - timeRatio; // 1.0 nếu thắng ngay lập tức, 0.0 nếu hết giờ
 
-    // 1. Phân loại Thắng / Thua / Hòa
+    // 1. Phân loại Thắng / Thua / Hòa bằng MatchEndKind enum
     if (res.isWin) {
-        if (res.endReason.find("Tu lenh") != std::string::npos || res.endReason.find("Commander") != std::string::npos) {
+        if (res.endKind == sim::MatchEndKind::CommanderKilled) {
             // Thắng bằng giết Tư lệnh địch: +1000 + thưởng kết thúc nhanh
             score += 1000.0f + 500.0f * speedBonus;
-        } else if (res.endReason.find("het quan") != std::string::npos || res.endReason.find("wiped") != std::string::npos) {
+        } else if (res.endKind == sim::MatchEndKind::TroopsWiped) {
             // Thắng bằng quét sạch quân: +800 + thưởng kết thúc nhanh
             score += 800.0f + 400.0f * speedBonus;
         } else {
@@ -91,10 +91,10 @@ float calculateSingleMatchFitness(const SingleMatchResult& res, uint64_t maxTick
             score += 300.0f;
         }
     } else if (res.isLoss) {
-        if (res.endReason.find("Tu lenh") != std::string::npos || res.endReason.find("Commander") != std::string::npos) {
+        if (res.endKind == sim::MatchEndKind::CommanderKilled) {
             // Thua do Tư lệnh chết: -1000, phạt nặng hơn nếu chết quá sớm
             score -= (1000.0f + 200.0f * speedBonus);
-        } else if (res.endReason.find("het quan") != std::string::npos || res.endReason.find("wiped") != std::string::npos) {
+        } else if (res.endKind == sim::MatchEndKind::TroopsWiped) {
             // Thua do hết quân
             score -= 800.0f;
         } else {
@@ -129,6 +129,26 @@ float calculateSingleMatchFitness(const SingleMatchResult& res, uint64_t maxTick
 // =============================================================================
 // Chẩn đoán trận thua (Match Diagnosis)
 // =============================================================================
+MatchDiagnosis diagnoseMatch(const SingleMatchResult& lossMatch) {
+    MatchDiagnosis diag;
+    diag.reason = lossMatch.endReason;
+    diag.ticksElapsed = lossMatch.finalTick;
+    diag.finalCommanderHp = lossMatch.candidateCommanderHp;
+    diag.commanderDied = (lossMatch.candidateCommanderHp <= 0 || lossMatch.endKind == sim::MatchEndKind::CommanderKilled);
+
+    if (lossMatch.endKind == sim::MatchEndKind::CommanderKilled || diag.commanderDied) {
+        diag.category = MatchDiagnosis::LossCategory::CommanderAssassinated;
+    } else if (lossMatch.endKind == sim::MatchEndKind::TroopsWiped ||
+               lossMatch.candidateTotalTroops < 800 ||
+               (lossMatch.opponentTotalTroops > lossMatch.candidateTotalTroops * 2)) {
+        diag.category = MatchDiagnosis::LossCategory::TroopAttrition;
+    } else {
+        diag.category = MatchDiagnosis::LossCategory::OutgunnedOrTimeout;
+    }
+
+    return diag;
+}
+
 MatchDiagnosis diagnoseMatch(const sim::WorldSim& sim, sim::Faction loserFaction, const std::string& endReason) {
     MatchDiagnosis diag;
     diag.reason = endReason;
@@ -156,10 +176,12 @@ MatchDiagnosis diagnoseMatch(const sim::WorldSim& sim, sim::Faction loserFaction
     diag.finalCommanderHp = friendlyCommanderHp;
     diag.commanderDied = !friendlyCmdAlive;
 
-    // Phân loại nguyên nhân thất bại
-    if (!friendlyCmdAlive || endReason.find("Tu lenh") != std::string::npos || endReason.find("Commander") != std::string::npos) {
+    const auto& endInfo = sim.getMatchEndInfo();
+    if (endInfo.kind == sim::MatchEndKind::CommanderKilled || !friendlyCmdAlive) {
         diag.category = MatchDiagnosis::LossCategory::CommanderAssassinated;
-    } else if (friendlyRemainingTroops < 800 || (enemyRemainingTroops > friendlyRemainingTroops * 2)) {
+    } else if (endInfo.kind == sim::MatchEndKind::TroopsWiped ||
+               friendlyRemainingTroops < 800 ||
+               (enemyRemainingTroops > friendlyRemainingTroops * 2)) {
         diag.category = MatchDiagnosis::LossCategory::TroopAttrition;
     } else {
         diag.category = MatchDiagnosis::LossCategory::OutgunnedOrTimeout;
@@ -282,6 +304,7 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
     const auto& endInfo = sim.getMatchEndInfo();
     res.result = endInfo.result;
     res.endReason = endInfo.reason;
+    res.endKind = endInfo.kind;
 
     // Thu thập số liệu quân số và máu tư lệnh
     int pUnits = 0, pTroops = 0, pCmdHp = 0;
@@ -341,12 +364,15 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
         // Trận đấu kết thúc do chạm trần maxTicks mà sim chưa gọi game over
         if (res.candidateTotalTroops > res.opponentTotalTroops) {
             res.isWin = true;
+            res.endKind = sim::MatchEndKind::Timeout;
             res.endReason = "Timeout: Candidate won by troop majority";
         } else if (res.candidateTotalTroops < res.opponentTotalTroops) {
             res.isLoss = true;
+            res.endKind = sim::MatchEndKind::Timeout;
             res.endReason = "Timeout: Opponent won by troop majority";
         } else {
             res.isDraw = true;
+            res.endKind = sim::MatchEndKind::Draw;
             res.endReason = "Timeout: Draw with equal troops";
         }
     }
@@ -455,8 +481,9 @@ void AiTrainer::initCsvLog() {
         if (p.has_parent_path()) {
             std::filesystem::create_directories(p.parent_path());
         }
-        std::ofstream f(m_config.logCsvFile);
-        if (f.is_open()) {
+        bool fileExistsAndHasData = std::filesystem::exists(p) && std::filesystem::file_size(p) > 0;
+        std::ofstream f(m_config.logCsvFile, std::ios::app);
+        if (f.is_open() && !fileExistsAndHasData) {
             f << "gen,best_fitness,avg_fitness,winrate_vs_baseline,matches,wall_ms,"
               << "decisionIntervalTicks,aggression,retreatHpRatio,commanderSafeRadiusTiles,"
               << "artilleryStandOffMargin,artilleryIdealRangeRatio,scoutingWeight,focusFireWeight,"
@@ -520,7 +547,7 @@ AiParams AiTrainer::mutate(const AiParams& p, float mutationRate, mapgen::FastRn
     AiParams res = p;
     auto mutateFloat = [&](float& val, float scale) {
         if (static_cast<float>(rng.range(0, 1000)) / 1000.0f < mutationRate) {
-            float delta = (static_cast<float>(rng.range(0, 2000)) / 1000.0f - 1.0f) * scale * mutationRate;
+            float delta = (static_cast<float>(rng.range(0, 2000)) / 1000.0f - 1.0f) * scale;
             val += delta;
         }
     };
@@ -571,7 +598,16 @@ bool AiTrainer::runEvolution() {
     std::vector<AiParams> hallOfFame;
     AiParams baselineParams{};
 
-    float allTimeBestFitness = -999999.0f;
+    // Bộ seed validation cố định (ít nhất 8 seed theo masterSeed)
+    uint32_t numValSeeds = std::max(8u, m_config.validationSeeds);
+    std::vector<uint64_t> validationSeeds(numValSeeds);
+    mapgen::FastRng valRng(m_config.masterSeed ^ 0xBA11DA7E5EEDULL);
+    for (uint32_t v = 0; v < numValSeeds; ++v) {
+        validationSeeds[v] = valRng.next64();
+    }
+
+    float allTimeBestValFitness = -999999.0f;
+    float allTimeBestValWinRate = 0.0f;
     uint32_t totalMatchesRun = 0;
     uint64_t allTimeSimTicks = 0;
 
@@ -823,21 +859,66 @@ bool AiTrainer::runEvolution() {
         logCsvGeneration(gen, genBestFitness, genAvgFitness, genBestWinVsBase,
                          matchesThisGen, genWallMs, population[0].params);
 
-        // 4. Cập nhật All-Time Best Params và lưu ngay ra đĩa khi phá kỷ lục
-        if (genBestFitness > allTimeBestFitness || gen == 1) {
-            allTimeBestFitness = genBestFitness;
-            m_bestParams = population[0].params;
+        // 4. Đánh giá lại top-3 trên bộ seed CỐ ĐỊNH (validationSeeds) vs baseline
+        size_t topK = std::min<size_t>(3, population.size());
+        size_t bestValIdx = 0;
+        float bestValFitness = -999999.0f;
+        float bestValWinRate = 0.0f;
+
+        std::cout << "  [*] Danh gia Validation top-" << topK << " tren " << validationSeeds.size()
+                  << " seed CO DINH vs Baseline...\n";
+
+        for (size_t k = 0; k < topK; ++k) {
+            float valFitSum = 0.0f;
+            int valWins = 0;
+            int valTotal = 0;
+
+            for (uint64_t vSeed : validationSeeds) {
+                MirrorPairResult valPair = evaluatePair(population[k].params, baselineParams, vSeed,
+                                                        m_config.maxTicks, nullptr, totalMatchesRun + 1,
+                                                        0, &m_stopRequested);
+                totalMatchesRun += 2;
+                allTimeSimTicks += (valPair.matchA.finalTick + valPair.matchB.finalTick);
+                valFitSum += valPair.totalFitness;
+                valWins += valPair.candidateWins;
+                valTotal += (valPair.candidateWins + valPair.opponentWins + valPair.draws);
+            }
+
+            float avgValFit = (validationSeeds.empty()) ? 0.0f : (valFitSum / static_cast<float>(validationSeeds.size()));
+            float wr = (valTotal > 0) ? (static_cast<float>(valWins) / static_cast<float>(valTotal)) : 0.0f;
+
+            std::cout << "      Top #" << (k + 1) << " Candidate: ValWinRate = "
+                      << std::fixed << std::setprecision(1) << (wr * 100.0f) << "% ("
+                      << valWins << "/" << valTotal << ") | ValFit = "
+                      << std::setprecision(1) << avgValFit << "\n";
+
+            if (avgValFit > bestValFitness) {
+                bestValFitness = avgValFit;
+                bestValWinRate = wr;
+                bestValIdx = k;
+            }
+        }
+
+        std::cout << ">>> [GEN " << std::setw(2) << gen << " VALIDATION] Best Top-3 WinRate: "
+                  << std::fixed << std::setprecision(1) << (bestValWinRate * 100.0f) << "% | ValFit: "
+                  << bestValFitness << "\n";
+
+        // Cập nhật All-Time Best Params CHỈ theo kết quả validation này
+        if (bestValFitness > allTimeBestValFitness || gen == 1) {
+            allTimeBestValFitness = bestValFitness;
+            allTimeBestValWinRate = bestValWinRate;
+            m_bestParams = population[bestValIdx].params;
 
             m_bestMetadata.generation = gen;
-            m_bestMetadata.fitness = genBestFitness;
-            m_bestMetadata.winRateVsBaseline = genBestWinVsBase;
+            m_bestMetadata.fitness = bestValFitness;
+            m_bestMetadata.winRateVsBaseline = bestValWinRate;
             m_bestMetadata.trainedMatches = totalMatchesRun;
             m_bestMetadata.algorithm = "evo";
             m_bestMetadata.timestamp = getIsoTimestamp();
 
             if (!m_config.outBestFile.empty()) {
                 if (saveTrainedAiProfile(m_config.outBestFile, m_bestParams, m_bestMetadata)) {
-                    std::cout << "  [*] Pha ky luc fitness! Da cap nhat profile tot nhat vao: "
+                    std::cout << "  [*] Dat ky luc Validation moi! Da cap nhat profile vao: "
                               << m_config.outBestFile << "\n";
                 }
             }
@@ -948,19 +1029,10 @@ bool AiTrainer::runAdaptation() {
 
         // Nếu candidate thua ít nhất 1 trận trong cặp hoặc fitness quá thấp
         if (pair.opponentWins > 0 || pair.totalFitness < 200.0f) {
-            // Xác định trận thua để chẩn đoán
+            // Xác định trận thua để chẩn đoán dựa trên trạng thái cuối của trận thua
             const SingleMatchResult& lossMatch = (pair.matchA.isLoss) ? pair.matchA : pair.matchB;
 
-            sim::WorldMap map(128, 96, 32);
-            sim::WorldSim sim(map);
-            sim.loadConfig();
-            mapgen::MapGenConfig cfg;
-            mapgen::MapGenerator gen;
-            gen.generate(map, seed, cfg);
-            sim.spawnDivisions(seed);
-
-            sim::Faction loserFaction = lossMatch.candidateIsPlayer ? sim::Faction::Player : sim::Faction::Enemy;
-            MatchDiagnosis diag = diagnoseMatch(sim, loserFaction, lossMatch.endReason);
+            MatchDiagnosis diag = diagnoseMatch(lossMatch);
 
             const char* diagStr = (diag.category == MatchDiagnosis::LossCategory::CommanderAssassinated) ? "CommanderAssassinated"
                                 : (diag.category == MatchDiagnosis::LossCategory::TroopAttrition) ? "TroopAttrition"
@@ -970,25 +1042,51 @@ bool AiTrainer::runAdaptation() {
             // Sinh bộ tham số thích nghi có định hướng
             AiParams adapted = adaptParamsAfterLoss(currentCandidate, diag, rng);
 
-            // Chạy trận tái đấu kiểm chứng (Validation Rematch)
-            std::cout << "  [*] Chay tai dau kiem chung (Validation Rematch)...\n";
-            MirrorPairResult rematch = evaluatePair(adapted, baselineParams, seed,
-                                                    m_config.maxTicks, watch, totalMatchesRun + 1,
-                                                    m_config.printEvery, &m_stopRequested);
-            totalMatchesRun += 2;
-            allTimeSimTicks += (rematch.matchA.finalTick + rematch.matchB.finalTick);
+            // Thử nghiệm adapted params trên ít nhất 3 seed khác nhau (không dùng lại seed vừa thua)
+            constexpr int NUM_ADAPT_SEEDS = 3;
+            std::vector<uint64_t> adaptSeeds;
+            while (adaptSeeds.size() < NUM_ADAPT_SEEDS) {
+                uint64_t s = rng.next64();
+                if (s != seed) {
+                    adaptSeeds.push_back(s);
+                }
+            }
 
-            std::cout << "  -> Ket qua Tai dau: Thang " << rematch.candidateWins
-                      << " - Thua " << rematch.opponentWins
-                      << " | Fitness cu: " << pair.totalFitness
-                      << " -> Fitness moi: " << rematch.totalFitness << "\n";
+            std::cout << "  [*] Kiem chung bo tham so thich nghi tren " << NUM_ADAPT_SEEDS
+                      << " seed doc lap (khac seed vua thua)...\n";
 
-            if (rematch.totalFitness > pair.totalFitness) {
-                std::cout << "  [+] Thich nghi thanh cong! Giu lai bo tham so cai tien.\n";
+            float currentTotalFit = 0.0f;
+            float adaptedTotalFit = 0.0f;
+            int currentWins = 0;
+            int adaptedWins = 0;
+
+            for (uint64_t tSeed : adaptSeeds) {
+                MirrorPairResult curRes = evaluatePair(currentCandidate, baselineParams, tSeed,
+                                                       m_config.maxTicks, watch, totalMatchesRun + 1,
+                                                       m_config.printEvery, &m_stopRequested);
+                totalMatchesRun += 2;
+                allTimeSimTicks += (curRes.matchA.finalTick + curRes.matchB.finalTick);
+                currentTotalFit += curRes.totalFitness;
+                currentWins += curRes.candidateWins;
+
+                MirrorPairResult adaptRes = evaluatePair(adapted, baselineParams, tSeed,
+                                                         m_config.maxTicks, watch, totalMatchesRun + 1,
+                                                         m_config.printEvery, &m_stopRequested);
+                totalMatchesRun += 2;
+                allTimeSimTicks += (adaptRes.matchA.finalTick + adaptRes.matchB.finalTick);
+                adaptedTotalFit += adaptRes.totalFitness;
+                adaptedWins += adaptRes.candidateWins;
+            }
+
+            std::cout << "  -> Ket qua kiem chung 3 seed: Adapted Fit = " << adaptedTotalFit
+                      << " (Thang " << adaptedWins << "/6) vs Current Fit = " << currentTotalFit
+                      << " (Thang " << currentWins << "/6)\n";
+
+            if (adaptedTotalFit > currentTotalFit) {
+                std::cout << "  [+] Thich nghi thanh cong vuot troi tren 3 seed! Chap nhan bo tham so cai tien.\n";
                 currentCandidate = adapted;
-                pair = rematch;
             } else {
-                std::cout << "  [-] Tai dau chua cai thien vuot troi, giu lai bo tham so an toan nhat.\n";
+                std::cout << "  [-] Thich nghi chua tot hon tren tap 3 seed doc lap, giu lai bo tham so an toan nhat.\n";
             }
         } else {
             std::cout << "  [+] Candidate xuat sac toan thang ca 2 luot tran, tiep tuc duy tri va toi uu them.\n";

@@ -684,11 +684,13 @@ void WorldSim::checkMatchConditions() {
     // 1. Cả hai tư lệnh đều chết hoặc hai bên đều hết quân
     if (!playerCommanderAlive && !enemyCommanderAlive) {
         m_matchEndInfo.result = MatchResult::Draw;
+        m_matchEndInfo.kind = MatchEndKind::Draw;
         m_matchEndInfo.reason = "Tu lenh hai ben deu da tu tran! Hoa tran.";
         return;
     }
     if (playerTotalUnits == 0 && enemyTotalUnits == 0) {
         m_matchEndInfo.result = MatchResult::Draw;
+        m_matchEndInfo.kind = MatchEndKind::Draw;
         m_matchEndInfo.reason = "Quan luc hai ben deu da bi tieu diet sach! Hoa tran.";
         return;
     }
@@ -696,6 +698,7 @@ void WorldSim::checkMatchConditions() {
     // 2. Thua khi tư lệnh chết
     if (!playerCommanderAlive) {
         m_matchEndInfo.result = MatchResult::Defeat;
+        m_matchEndInfo.kind = MatchEndKind::CommanderKilled;
         m_matchEndInfo.reason = "Tu lenh cua ban da hy sinh! That bai.";
         return;
     }
@@ -703,6 +706,7 @@ void WorldSim::checkMatchConditions() {
     // 3. Thắng khi tư lệnh địch chết
     if (!enemyCommanderAlive) {
         m_matchEndInfo.result = MatchResult::Victory;
+        m_matchEndInfo.kind = MatchEndKind::CommanderKilled;
         m_matchEndInfo.reason = "Tu lenh dich da bi tieu diet! Chien thang!";
         return;
     }
@@ -710,6 +714,7 @@ void WorldSim::checkMatchConditions() {
     // 4. Thắng khi địch hết quân (chỉ còn tư lệnh)
     if (enemyOtherCount == 0 && playerOtherCount > 0) {
         m_matchEndInfo.result = MatchResult::Victory;
+        m_matchEndInfo.kind = MatchEndKind::TroopsWiped;
         m_matchEndInfo.reason = "Quan dich da bi tieu diet hoan toan (chi con tu lenh)! Chien thang!";
         return;
     }
@@ -717,6 +722,7 @@ void WorldSim::checkMatchConditions() {
     // 5. Cả 2 bên đều chỉ còn tư lệnh (hết quân)
     if (enemyOtherCount == 0 && playerOtherCount == 0) {
         m_matchEndInfo.result = MatchResult::Draw;
+        m_matchEndInfo.kind = MatchEndKind::Draw;
         m_matchEndInfo.reason = "Quan luc hai ben deu da bi tieu diet sach! Hoa tran.";
         return;
     }
@@ -725,14 +731,17 @@ void WorldSim::checkMatchConditions() {
     if (m_currentTick >= getMatchDurationTicks()) {
         if (playerTotalUnits > enemyTotalUnits) {
             m_matchEndInfo.result = MatchResult::Victory;
+            m_matchEndInfo.kind = MatchEndKind::Timeout;
             m_matchEndInfo.reason = "Het thoi gian! Phe ban thang nho tong quan so ap dao (" +
                                     std::to_string(playerTotalUnits) + " vs " + std::to_string(enemyTotalUnits) + ").";
         } else if (enemyTotalUnits > playerTotalUnits) {
             m_matchEndInfo.result = MatchResult::Defeat;
+            m_matchEndInfo.kind = MatchEndKind::Timeout;
             m_matchEndInfo.reason = "Het thoi gian! Phe dich thang nho tong quan so ap dao (" +
                                     std::to_string(enemyTotalUnits) + " vs " + std::to_string(playerTotalUnits) + ").";
         } else {
             m_matchEndInfo.result = MatchResult::Draw;
+            m_matchEndInfo.kind = MatchEndKind::Draw;
             m_matchEndInfo.reason = "Het thoi gian! Quan so hai ben can bang (" +
                                     std::to_string(playerTotalUnits) + "). Hoa tran.";
         }

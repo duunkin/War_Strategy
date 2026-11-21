@@ -31,11 +31,22 @@ enum class MatchResult : uint8_t {
 };
 
 /**
+ * @brief Lý do / Loại hình kết thúc ván đấu
+ */
+enum class MatchEndKind {
+    CommanderKilled = 0, // Tư lệnh bị tiêu diệt
+    TroopsWiped,         // Quét sạch toàn bộ quân lực
+    Timeout,             // Hết thời gian trận đấu
+    Draw                 // Hòa trận
+};
+
+/**
  * @brief Thông tin chi tiết khi ván kết thúc
  */
 struct MatchEndInfo {
-    MatchResult result{MatchResult::InProgress};
-    std::string reason;
+    MatchResult  result{MatchResult::InProgress};
+    std::string  reason;
+    MatchEndKind kind{MatchEndKind::Draw};
 };
 
 /**

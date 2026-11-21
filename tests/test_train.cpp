@@ -110,6 +110,7 @@ void testParamsBoundsAndJsonRoundTrip() {
     {
         SingleMatchResult lossWithMoreTroops;
         lossWithMoreTroops.isLoss = true;
+        lossWithMoreTroops.endKind = sim::MatchEndKind::CommanderKilled;
         lossWithMoreTroops.endReason = "Phe Do thang do Tu lenh Phe Xanh bi tieu diet";
         lossWithMoreTroops.finalTick = 1000;
         lossWithMoreTroops.candidateTotalTroops = 25000;
@@ -122,6 +123,7 @@ void testParamsBoundsAndJsonRoundTrip() {
 
         SingleMatchResult winTimeout;
         winTimeout.isWin = true;
+        winTimeout.endKind = sim::MatchEndKind::Timeout;
         winTimeout.endReason = "Timeout: Candidate won by troop majority";
         winTimeout.finalTick = 6000;
         winTimeout.candidateTotalTroops = 15500;

@@ -19,12 +19,12 @@ using namespace replay;
 
 namespace {
 
-bool initSim(WorldSim& sim) {
-    if (!sim.loadConfig()) {
+void initSim(WorldSim& sim) {
+    bool ok = sim.loadConfig();
+    if (!ok) {
         std::cerr << "[TestReplay] Khong the load config cho WorldSim!" << std::endl;
-        return false;
+        std::abort();
     }
-    return true;
 }
 
 } // namespace
@@ -44,7 +44,7 @@ void testReplayDeterminism() {
     // -------------------------------------------------------------------------
     WorldMap mapLive(128, 96, 32);
     WorldSim simLive(mapLive);
-    assert(initSim(simLive));
+    initSim(simLive);
     simLive.spawnDivisions(TEST_SEED);
 
     AiParams p1;
@@ -91,7 +91,7 @@ void testReplayDeterminism() {
 
     WorldMap mapPlayback(128, 96, 32);
     WorldSim simPlayback(mapPlayback);
-    assert(initSim(simPlayback));
+    initSim(simPlayback);
     simPlayback.spawnDivisions(player.getSeed());
 
     for (int t = 0; t < RUN_TICKS; ++t) {
@@ -146,7 +146,7 @@ void testAiTelemetry() {
 
     WorldMap map(128, 96, 32);
     WorldSim sim(map);
-    assert(initSim(sim));
+    initSim(sim);
     sim.spawnDivisions(99999ULL);
 
     TacticalAI ai1(Faction::Player, 12345ULL);
@@ -218,7 +218,7 @@ void testBatchAndCsvLog() {
             uint64_t seed = BASE_SEED + static_cast<uint64_t>(m - 1);
             WorldMap map(128, 96, 32);
             WorldSim sim(map);
-            assert(initSim(sim));
+            initSim(sim);
             sim.spawnDivisions(seed);
 
             TacticalAI ai1(Faction::Player, seed ^ 0x1111ULL);
@@ -268,7 +268,7 @@ void testBatchAndCsvLog() {
         uint64_t seed = BASE_SEED + static_cast<uint64_t>(m - 1);
         WorldMap map(128, 96, 32);
         WorldSim sim(map);
-        assert(initSim(sim));
+        initSim(sim);
         sim.spawnDivisions(seed);
 
         TacticalAI ai1(Faction::Player, seed ^ 0x1111ULL);

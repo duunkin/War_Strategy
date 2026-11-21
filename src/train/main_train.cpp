@@ -59,13 +59,16 @@ void printHelp(const char* progName) {
               << "                               (Mac dinh: evo)\n"
               << "  --generations <N>            So the he tien hoa hoac chu ky thich nghi (Mac dinh: 10)\n"
               << "  --population <N>             Kich thuoc quan the moi the he (Mac dinh: 8)\n"
-              << "  --seeds-per-gen <N>          So seed ban do moi the he (Mac dinh: 2, tuc moi cap la 4 tran mirror)\n"
-              << "  --max-ticks <N>              Gioi han tick toi da moi tran (Mac dinh: 6000 = 5 phut in-game)\n"
-              << "  --threads <N>                So luong CPU chay song song (Mac dinh: hardware_concurrency)\n"
+              << "  --seeds-per-gen <N>          So seed ban do moi the he (Mac dinh: 6)\n"
+              << "  --validation-seeds <N>       So seed validation co dinh danh gia top-3 vs baseline (Mac dinh: 8)\n"
+              << "  --max-ticks <N>              Gioi han tick toi da moi tran (Mac dinh: 24000 = 20 phut in-game)\n"
+              << "  --threads <N>                So luong CPU chay song song (Mac dinh: hardware_concurrency / procs)\n"
+              << "  --procs, --expected-procs <N> So tien trinh train du kien chay song song de tinh threads (Mac dinh: 1)\n"
               << "  --seed <uint64>              Master seed tat dinh cho toan bo qua trinh train (Mac dinh: 12345)\n"
               << "  --resume <file.json>         Tiep tuc huan luyen tu mot file profile AiParams da luu\n"
               << "  --out-best <file.json>       Duong dan luu profile bo tham so manh nhat (Mac dinh: data/ai_best_params.json)\n"
-              << "  --log <file.csv>             Ghi log CSV lich su chi tiet tung the he / chu ky\n"
+              << "                               (Luu y: Bat buoc khac nhau khi chay nhieu tien trinh song song)\n"
+              << "  --log <file.csv>             Ghi log CSV lich su chi tiet tung the he / chu ky (ghi noi neu file da ton tai)\n"
               << "  --save-showcase-replay <f>   Sau khi train xong, chay 1 tran Champion AI vs Baseline va luu replay JSON\n"
               << "  --live                       Che do cap nhat truc quan tai cho tren CMD qua ANSI (Mac dinh neu la TTY)\n"
               << "  --scroll                     Che do in cuon tung cap dong kem trang thai\n"
@@ -81,8 +84,8 @@ int main(int argc, char* argv[]) {
     enableWindowsAnsi();
 
     ai::TrainerConfig config;
-    config.threadCount = std::thread::hardware_concurrency();
-    if (config.threadCount == 0) config.threadCount = 1;
+    uint32_t expectedProcs = 1;
+    bool threadsExplicitlySet = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -98,10 +101,15 @@ int main(int argc, char* argv[]) {
             config.populationSize = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--seeds-per-gen" && i + 1 < argc) {
             config.seedsPerGen = static_cast<uint32_t>(std::stoul(argv[++i]));
+        } else if (arg == "--validation-seeds" && i + 1 < argc) {
+            config.validationSeeds = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--max-ticks" && i + 1 < argc) {
             config.maxTicks = std::stoull(argv[++i]);
         } else if (arg == "--threads" && i + 1 < argc) {
             config.threadCount = static_cast<uint32_t>(std::stoul(argv[++i]));
+            threadsExplicitlySet = true;
+        } else if ((arg == "--procs" || arg == "--expected-procs") && i + 1 < argc) {
+            expectedProcs = std::max(1u, static_cast<uint32_t>(std::stoul(argv[++i])));
         } else if (arg == "--seed" && i + 1 < argc) {
             config.masterSeed = std::stoull(argv[++i]);
         } else if (arg == "--resume" && i + 1 < argc) {
@@ -132,6 +140,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (!threadsExplicitlySet) {
+        unsigned int hw = std::thread::hardware_concurrency();
+        if (hw == 0) hw = 4;
+        config.threadCount = std::max(1u, hw / expectedProcs);
+    }
+
+    if (std::filesystem::exists(config.outBestFile) && config.resumeFile.empty()) {
+        std::cerr << "[CANH BAO] File --out-best '" << config.outBestFile
+                  << "' da ton tai va khong co --resume! Khi chay song song, bat buoc dung --out-best khac nhau de tranh ghi de.\n";
+    }
+
     std::cout << "========================================================================\n"
               << "War Strategy - Module Huan Luyen AI Tu Hoc (Milestone 9)\n"
               << "========================================================================\n"
@@ -139,6 +158,7 @@ int main(int argc, char* argv[]) {
               << "  - Generations:    " << config.generations << "\n"
               << "  - Population:     " << config.populationSize << "\n"
               << "  - Seeds/Gen:      " << config.seedsPerGen << "\n"
+              << "  - Validation Seeds:" << config.validationSeeds << "\n"
               << "  - Max Ticks:      " << config.maxTicks << " (~" << (config.maxTicks / 20) << "s in-game)\n"
               << "  - Threads:        " << config.threadCount << "\n"
               << "  - Master Seed:    " << config.masterSeed << "\n"

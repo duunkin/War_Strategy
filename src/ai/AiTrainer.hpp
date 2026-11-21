@@ -40,10 +40,11 @@ inline TrainingMode stringToTrainingMode(const std::string& str) {
  * @brief Kết quả một trận đấu đơn lập giữa 2 AI
  */
 struct SingleMatchResult {
-    bool             candidateIsPlayer{true}; // true: candidate cầm Player (Blue); false: candidate cầm Enemy (Red)
-    sim::MatchResult result{sim::MatchResult::InProgress};
-    std::string      endReason;
-    uint64_t         finalTick{0};
+    bool              candidateIsPlayer{true}; // true: candidate cầm Player (Blue); false: candidate cầm Enemy (Red)
+    sim::MatchResult  result{sim::MatchResult::InProgress};
+    sim::MatchEndKind endKind{sim::MatchEndKind::Draw};
+    std::string       endReason;
+    uint64_t          finalTick{0};
 
     int              candidateAliveUnits{0};
     int              candidateTotalTroops{0};
@@ -107,14 +108,15 @@ struct TrainerConfig {
 
     uint32_t     generations{10};      // Số thế hệ (evo) hoặc số chu kỳ thích nghi (adapt)
     uint32_t     populationSize{8};    // Kích thước quần thể (evo)
-    uint32_t     seedsPerGen{2};       // Số seed bản đồ mỗi thế hệ (mỗi seed chạy 1 cặp mirror = 2 trận)
-    uint64_t     maxTicks{6000};       // Giới hạn tick mỗi trận (6000 tick = 5 phút in-game)
+    uint32_t     seedsPerGen{6};       // Số seed bản đồ mỗi thế hệ (mỗi seed chạy 1 cặp mirror = 2 trận)
+    uint64_t     maxTicks{24000};      // Giới hạn tick mỗi trận (24000 tick = 20 phút in-game)
     uint32_t     threadCount{1};       // Số luồng CPU chạy song song
     uint64_t     masterSeed{12345ULL}; // Master seed tất định
+    uint32_t     validationSeeds{8};   // Số seed validation cố định đánh giá top-3
 
     uint32_t     eliteCount{2};        // Số cá thể tinh hoa giữ nguyên qua từng thế hệ
     float        mutationRateInitial{0.35f}; // Tỉ lệ đột biến ban đầu
-    float        mutationRateFinal{0.05f};   // Tỉ lệ đột biến cuối kỳ (annealing)
+    float        mutationRateFinal{0.12f};   // Tỉ lệ đột biến cuối kỳ (annealing)
 
     std::string  resumeFile;           // Nạp profile AI đã huấn luyện trước đó
     std::string  outBestFile{"data/ai_best_params.json"}; // Đường dẫn lưu profile vô địch
@@ -169,8 +171,9 @@ struct LiveTelemetryWatch {
 float calculateSingleMatchFitness(const SingleMatchResult& res, uint64_t maxTicks);
 
 /**
- * @brief Chẩn đoán nguyên nhân thất bại của một phe trong trận đấu
+ * @brief Chẩn đoán nguyên nhân thất bại của một phe trong trận đấu (dùng thông số trận thua)
  */
+MatchDiagnosis diagnoseMatch(const SingleMatchResult& lossMatch);
 MatchDiagnosis diagnoseMatch(const sim::WorldSim& sim, sim::Faction loserFaction, const std::string& endReason);
 
 /**

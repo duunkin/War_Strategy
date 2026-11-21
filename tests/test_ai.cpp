@@ -14,12 +14,12 @@ using namespace sim;
 using namespace ai;
 
 // Helper: Khởi tạo WorldSim với cấu hình chuẩn
-bool initSim(WorldSim& sim) {
-    if (!sim.loadConfig()) {
+void initSim(WorldSim& sim) {
+    bool ok = sim.loadConfig();
+    if (!ok) {
         std::cerr << "Khong the load config cho WorldSim!" << std::endl;
-        return false;
+        std::abort();
     }
-    return true;
 }
 
 // =============================================================================
@@ -34,7 +34,7 @@ void testDeterminism() {
     // Lần chạy 1
     WorldMap map1(128, 96, 32);
     WorldSim sim1(map1);
-    assert(initSim(sim1));
+    initSim(sim1);
     sim1.spawnDivisions(TEST_SEED);
 
     TacticalAI ai1(Faction::Enemy, TEST_SEED);
@@ -52,7 +52,7 @@ void testDeterminism() {
     // Lần chạy 2 (khởi tạo độc lập cùng seed)
     WorldMap map2(128, 96, 32);
     WorldSim sim2(map2);
-    assert(initSim(sim2));
+    initSim(sim2);
     sim2.spawnDivisions(TEST_SEED);
 
     TacticalAI ai2(Faction::Enemy, TEST_SEED);
@@ -104,7 +104,7 @@ void testFogOfWarCompliance() {
 
     WorldMap map(128, 96, 32);
     WorldSim sim(map);
-    assert(initSim(sim));
+    initSim(sim);
 
     // Đặt 1 đơn vị Enemy ở (100, 50)
     const auto* infCfg = sim.getConfig().getUnitConfig(UnitType::Infantry);
@@ -167,7 +167,7 @@ void testTacticalBehaviors() {
 
     WorldMap map(128, 96, 32);
     WorldSim sim(map);
-    assert(initSim(sim));
+    initSim(sim);
 
     const auto* comCfg = sim.getConfig().getUnitConfig(UnitType::Commander);
     const auto* infCfg = sim.getConfig().getUnitConfig(UnitType::Infantry);
@@ -247,7 +247,7 @@ void testCombatAndMovementEngagement() {
 
     WorldMap map(128, 96, 32);
     WorldSim sim(map);
-    assert(initSim(sim));
+    initSim(sim);
     sim.spawnDivisions(55555ULL);
 
     // Khởi tạo 2 AI: Player AI vs Enemy AI (sẵn sàng cho mốc M8!)
