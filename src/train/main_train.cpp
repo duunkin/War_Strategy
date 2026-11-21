@@ -2,11 +2,13 @@
 #include "../ai/AiTelemetry.hpp"
 
 #include <iostream>
+#include <iomanip>
 #include <string>
 #include <vector>
 #include <csignal>
 #include <thread>
 #include <filesystem>
+#include <atomic>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -26,12 +28,16 @@
 namespace {
 
 ai::AiTrainer* g_activeTrainer = nullptr;
+std::atomic<bool>* g_evalStopRequested = nullptr;
 
 void sigintHandler(int signal) {
     if (signal == SIGINT) {
-        std::cout << "\n\n[Ctrl+C] Nhan tin hieu ngat (SIGINT)! Dang dung muot va luu ket qua tot nhat...\n" << std::flush;
+        std::cout << "\n\n[Ctrl+C] Nhan tin hieu ngat (SIGINT)! Dang dung muot va luu ket qua...\n" << std::flush;
         if (g_activeTrainer) {
             g_activeTrainer->requestStop();
+        }
+        if (g_evalStopRequested) {
+            g_evalStopRequested->store(true);
         }
     }
 }
@@ -54,7 +60,7 @@ void printHelp(const char* progName) {
               << "War Strategy - AI Self-Play & Evolutionary Trainer (Milestone 9)\n"
               << "========================================================================\n"
               << "Usage: " << progName << " [OPTIONS]\n\n"
-              << "Options:\n"
+              << "Options Huan Luyen:\n"
               << "  --mode <evo|adapt>           Thuat toan huan luyen: evo (tien hoa quan the) hoac adapt (thich nghi sau tran thua)\n"
               << "                               (Mac dinh: evo)\n"
               << "  --generations <N>            So the he tien hoa hoac chu ky thich nghi (Mac dinh: 10)\n"
@@ -73,9 +79,136 @@ void printHelp(const char* progName) {
               << "  --live                       Che do cap nhat truc quan tai cho tren CMD qua ANSI (Mac dinh neu la TTY)\n"
               << "  --scroll                     Che do in cuon tung cap dong kem trang thai\n"
               << "  --quiet                      Tat hien thi telemetry truc quan, chi in tong ket\n"
-              << "  --print-every <ticks>        Tan suat lay mau suy nghi cua AI tu Worker 0 (Mac dinh: 20 ticks)\n"
+              << "  --print-every <ticks>        Tan suat lay mau suy nghi cua AI tu Worker 0 (Mac dinh: 20 ticks)\n\n"
+              << "Options Danh Gia Doc Lap (--eval-only):\n"
+              << "  --eval-only <file.json>      Chi danh gia 1 profile AI tren tap seed moi (khong train)\n"
+              << "  --vs-baseline                Danh gia profile doi dau voi Baseline AI (dung kem --eval-only)\n"
+              << "  --seeds <N>                  So seed mirror danh gia trong --eval-only (Mac dinh: 8)\n\n"
+              << "Tro Giup:\n"
               << "  --help, -h                   Hien thi huong dan su dung nay\n"
               << "========================================================================\n";
+}
+
+int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t numSeeds, const ai::TrainerConfig& config) {
+    if (!std::filesystem::exists(evalFile)) {
+        std::cerr << "[ERROR] File profile khong ton tai: " << evalFile << "\n";
+        return 1;
+    }
+
+    ai::AiParams evalParams;
+    ai::AiTrainingMetadata evalMeta;
+    if (!ai::loadTrainedAiProfile(evalFile, evalParams, &evalMeta)) {
+        std::cerr << "[ERROR] Khong the nap du lieu profile JSON: " << evalFile << "\n";
+        return 1;
+    }
+
+    ai::AiParams opponentParams{}; // Baseline AI
+    const std::string opponentName = "Baseline AI";
+
+    std::cout << "========================================================================\n"
+              << "War Strategy - Danh Gia Profile Doc Lap (--eval-only)\n"
+              << "========================================================================\n"
+              << "  - Profile can danh gia:       " << evalFile << "\n"
+              << "  - Doi thu doi dau:            " << opponentName << "\n"
+              << "  - So seed danh gia:           " << numSeeds << " (" << (numSeeds * 2) << " tran mirror)\n"
+              << "  - Max Ticks moi tran:         " << config.maxTicks << " (~" << (config.maxTicks / 20) << "s in-game)\n"
+              << "  - So luong CPU:               " << config.threadCount << "\n"
+              << "  - Master Seed danh gia:       " << config.masterSeed << "\n"
+              << "========================================================================\n"
+              << "Dang tien hanh danh gia cac cap tran Mirror song song...\n" << std::flush;
+
+    mapgen::FastRng rng(config.masterSeed ^ 0xBA5E114E5EEDULL);
+    std::vector<uint64_t> evalSeeds(numSeeds);
+    for (uint32_t s = 0; s < numSeeds; ++s) {
+        evalSeeds[s] = rng.next64();
+    }
+
+    std::vector<ai::MirrorPairResult> results(numSeeds);
+    std::atomic<size_t> nextTask{0};
+    std::atomic<bool> stopRequested{false};
+    g_evalStopRequested = &stopRequested;
+    std::signal(SIGINT, sigintHandler);
+
+    auto worker = [&]() {
+        while (!stopRequested.load()) {
+            size_t idx = nextTask.fetch_add(1);
+            if (idx >= numSeeds) break;
+            results[idx] = ai::evaluatePair(evalParams, opponentParams, evalSeeds[idx],
+                                            config.maxTicks, nullptr, static_cast<int>(idx * 2 + 1),
+                                            0, &stopRequested);
+        }
+    };
+
+    std::vector<std::thread> workers;
+    uint32_t numThreads = std::max(1u, std::min(config.threadCount, numSeeds));
+    for (uint32_t th = 0; th < numThreads; ++th) {
+        workers.emplace_back(worker);
+    }
+    for (auto& w : workers) {
+        if (w.joinable()) w.join();
+    }
+    g_evalStopRequested = nullptr;
+
+    if (stopRequested.load()) {
+        std::cout << "\n[Canh bao] Tien trinh danh gia bi dung som boi nguoi dung (SIGINT).\n";
+    }
+
+    int totalMatches = 0;
+    int candidateWins = 0;
+    int opponentWins = 0;
+    int draws = 0;
+    int candidateCmdDeaths = 0;
+    int opponentCmdDeaths = 0;
+    int timeoutMatches = 0;
+    float totalFitnessSum = 0.0f;
+
+    for (size_t i = 0; i < nextTask.load() && i < numSeeds; ++i) {
+        const auto& pair = results[i];
+        if (pair.seed == 0 && pair.matchA.finalTick == 0) continue; // Task chua chay
+        totalMatches += 2;
+        candidateWins += pair.candidateWins;
+        opponentWins += pair.opponentWins;
+        draws += pair.draws;
+        totalFitnessSum += pair.totalFitness;
+
+        auto checkMatch = [&](const ai::SingleMatchResult& m) {
+            if (m.didCandidateCommanderDie()) candidateCmdDeaths++;
+            if (m.opponentCommanderHp <= 0 || (m.isWin && m.endKind == sim::MatchEndKind::CommanderKilled)) {
+                opponentCmdDeaths++;
+            }
+            if (m.endKind == sim::MatchEndKind::Timeout) {
+                timeoutMatches++;
+            }
+        };
+
+        checkMatch(pair.matchA);
+        checkMatch(pair.matchB);
+    }
+
+    float winrate = (totalMatches > 0) ? (static_cast<float>(candidateWins) / static_cast<float>(totalMatches)) : 0.0f;
+    float avgFit = (totalMatches > 0) ? (totalFitnessSum / static_cast<float>(totalMatches / 2)) : 0.0f;
+
+    std::cout << "\n========================================================================\n"
+              << "KET QUA DANH GIA PROFILE VS BASELINE\n"
+              << "========================================================================\n"
+              << "  - Tong so tran mirror:        " << totalMatches << " (" << (totalMatches / 2) << " seeds)\n"
+              << "  - Ket qua (Thang - Thua - Hoa): " << candidateWins << " - " << opponentWins << " - " << draws << "\n"
+              << "  - Ty le thang (Winrate):      " << std::fixed << std::setprecision(1) << (winrate * 100.0f) << "%\n"
+              << "  - Tu lenh Candidate chet:     " << candidateCmdDeaths << " / " << totalMatches << " tran\n"
+              << "  - Tu lenh Baseline chet:      " << opponentCmdDeaths << " / " << totalMatches << " tran\n"
+              << "  - Tran ket thuc do het gio:   " << timeoutMatches << " / " << totalMatches << " tran\n"
+              << "  - Fitness trung binh moi seed: " << std::setprecision(1) << avgFit << "\n"
+              << "========================================================================\n";
+
+    if (winrate > 0.5f) {
+        std::cout << ">>> XAC NHAN: Profile AI (" << (winrate * 100.0f) << "% winrate) THUC SU TOT HON Baseline AI!\n\n";
+    } else if (winrate == 0.5f) {
+        std::cout << ">>> XAC NHAN: Profile AI (" << (winrate * 100.0f) << "% winrate) CAN BANG voi Baseline AI.\n\n";
+    } else {
+        std::cout << ">>> XAC NHAN: Profile AI (" << (winrate * 100.0f) << "% winrate) CHUA TOT HON Baseline AI.\n\n";
+    }
+
+    return 0;
 }
 
 } // namespace
@@ -87,12 +220,22 @@ int main(int argc, char* argv[]) {
     uint32_t expectedProcs = 1;
     bool threadsExplicitlySet = false;
 
+    std::string evalOnlyFile;
+    bool vsBaseline = false;
+    uint32_t evalSeedCount = 8;
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
         if ((arg == "--help" || arg == "-h")) {
             printHelp(argv[0]);
             return 0;
+        } else if (arg == "--eval-only" && i + 1 < argc) {
+            evalOnlyFile = argv[++i];
+        } else if (arg == "--vs-baseline") {
+            vsBaseline = true;
+        } else if (arg == "--seeds" && i + 1 < argc) {
+            evalSeedCount = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--mode" && i + 1 < argc) {
             config.mode = ai::stringToTrainingMode(argv[++i]);
         } else if (arg == "--generations" && i + 1 < argc) {
@@ -144,6 +287,10 @@ int main(int argc, char* argv[]) {
         unsigned int hw = std::thread::hardware_concurrency();
         if (hw == 0) hw = 4;
         config.threadCount = std::max(1u, hw / expectedProcs);
+    }
+
+    if (!evalOnlyFile.empty()) {
+        return runEvaluationOnly(evalOnlyFile, vsBaseline, evalSeedCount, config);
     }
 
     if (std::filesystem::exists(config.outBestFile) && config.resumeFile.empty()) {
