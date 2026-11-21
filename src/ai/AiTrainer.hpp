@@ -49,10 +49,12 @@ struct SingleMatchResult {
     int              candidateAliveUnits{0};
     int              candidateTotalTroops{0};
     int              candidateCommanderHp{0};
+    uint32_t         candidateCommandsIssued{0};
 
     int              opponentAliveUnits{0};
     int              opponentTotalTroops{0};
     int              opponentCommanderHp{0};
+    uint32_t         opponentCommandsIssued{0};
 
     float            fitnessScore{0.0f};
     bool             isWin{false};

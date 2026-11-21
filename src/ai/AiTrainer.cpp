@@ -327,20 +327,29 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
         }
     }
 
+    uint32_t pCmds = aiPlayer.getTotalCommandsIssued();
+    uint32_t eCmds = aiEnemy.getTotalCommandsIssued();
+
     if (candidateIsPlayer) {
-        res.candidateAliveUnits   = pUnits;
-        res.candidateTotalTroops  = pTroops;
-        res.candidateCommanderHp  = pCmdHp;
-        res.opponentAliveUnits    = eUnits;
-        res.opponentTotalTroops   = eTroops;
-        res.opponentCommanderHp   = eCmdHp;
+        res.candidateAliveUnits      = pUnits;
+        res.candidateTotalTroops     = pTroops;
+        res.candidateCommanderHp     = pCmdHp;
+        res.candidateCommandsIssued  = pCmds;
+
+        res.opponentAliveUnits       = eUnits;
+        res.opponentTotalTroops      = eTroops;
+        res.opponentCommanderHp      = eCmdHp;
+        res.opponentCommandsIssued   = eCmds;
     } else {
-        res.candidateAliveUnits   = eUnits;
-        res.candidateTotalTroops  = eTroops;
-        res.candidateCommanderHp  = eCmdHp;
-        res.opponentAliveUnits    = pUnits;
-        res.opponentTotalTroops   = pTroops;
-        res.opponentCommanderHp   = pCmdHp;
+        res.candidateAliveUnits      = eUnits;
+        res.candidateTotalTroops     = eTroops;
+        res.candidateCommanderHp     = eCmdHp;
+        res.candidateCommandsIssued  = eCmds;
+
+        res.opponentAliveUnits       = pUnits;
+        res.opponentTotalTroops      = pTroops;
+        res.opponentCommanderHp      = pCmdHp;
+        res.opponentCommandsIssued   = pCmds;
     }
 
     // Xác định kết quả từ góc nhìn Candidate
