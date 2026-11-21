@@ -62,21 +62,6 @@ static UnitDomain parseDomain(const std::string& domainStr) {
     return UnitDomain::Land;
 }
 
-static UnitType parseUnitTypeKey(const std::string& key) {
-    if (key == "COMMANDER") return UnitType::Commander;
-    if (key == "INFANTRY") return UnitType::Infantry;
-    if (key == "LEOPARD_2A") return UnitType::Leopard2A;
-    if (key == "T14_ARMATA") return UnitType::T14Armata;
-    if (key == "PUMA") return UnitType::Puma;
-    if (key == "CAESAR") return UnitType::Caesar;
-    if (key == "GEPARD") return UnitType::Gepard;
-    if (key == "SU57") return UnitType::Su57;
-    if (key == "B2_SPIRIT") return UnitType::B2Spirit;
-    if (key == "FFM3_MOGAMI") return UnitType::Mogami;
-    if (key == "DD151_ASAGIRI") return UnitType::Asagiri;
-    return UnitType::Count;
-}
-
 bool SimConfig::loadFromFile(const std::string& filePath) {
     std::string content;
     if (!readFileToString(filePath, content)) {

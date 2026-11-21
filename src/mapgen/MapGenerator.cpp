@@ -185,7 +185,6 @@ void MapGenerator::generate(sim::WorldMap& map, uint64_t seed, const MapGenConfi
         path.push_back(startIdx);
         riverVisited[static_cast<size_t>(startIdx)] = true;
 
-        bool reachedWater = false;
         for (int step = 0; step < config.maxRiverLength; ++step) {
             static const int DXY[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
@@ -203,7 +202,6 @@ void MapGenerator::generate(sim::WorldMap& map, uint64_t seed, const MapGenConfi
                 }
             }
             if (hitWaterNeighbor) {
-                reachedWater = true;
                 break;
             }
 
@@ -227,7 +225,6 @@ void MapGenerator::generate(sim::WorldMap& map, uint64_t seed, const MapGenConfi
             if (bestNeighbor == -1) {
                 // Đạt điểm cực tiểu cục bộ (vùng trũng không lối thoát) -> tạo hồ nhỏ tại đây
                 map.setTileByIndex(curY * width + curX, sim::TerrainType::Lake);
-                reachedWater = true;
                 break;
             }
 
@@ -238,7 +235,6 @@ void MapGenerator::generate(sim::WorldMap& map, uint64_t seed, const MapGenConfi
 
             if (map.getTileByIndex(bestNeighbor) == sim::TerrainType::River) {
                 // Nhập dòng vào một con sông khác
-                reachedWater = true;
                 break;
             }
         }

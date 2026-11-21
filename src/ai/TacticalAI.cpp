@@ -523,9 +523,6 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             const auto* leader = mainForce[0];
             int lx = leader->getTileX();
             int ly = leader->getTileY();
-            int offset = (m_controlledFaction == sim::Faction::Enemy) ? 6 : -6;
-            int targetX = std::clamp(lx + offset, 2, sim.getMap().getWidth() - 3);
-            int targetY = ly;
             sim::TileCoord tgt = findSafeRetreatTile(sim, cx, cy, lx, ly, sim::UnitDomain::Land, sim::UnitType::Caesar, 2, 4);
             sim::Command cmd;
             cmd.type = sim::CommandType::Move;

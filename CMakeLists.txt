@@ -12,7 +12,7 @@ endif()
 find_package(Threads REQUIRED)
 
 if(NOT GIT_EXECUTABLE)
-    find_program(GIT_EXECUTABLE NAMES git git.exe PATHS "C:/Users/quangnguyen/AppData/Local/Programs/Git/cmd" "C:/Program Files/Git/cmd" "C:/Program Files/Git/bin")
+    find_program(GIT_EXECUTABLE NAMES git git.exe PATHS "C:/Program Files/Git/cmd" "C:/Program Files/Git/bin")
     if(GIT_EXECUTABLE)
         set(GIT_EXECUTABLE "${GIT_EXECUTABLE}" CACHE FILEPATH "Git executable" FORCE)
     endif()
@@ -133,47 +133,50 @@ target_link_libraries(War_Strategy_Train PRIVATE war_sim_core Threads::Threads)
 # ==============================================================================
 # Testing
 # ==============================================================================
+# Copy data/ directory into build directory
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
+
 enable_testing()
 
 add_executable(test_mapgen tests/test_mapgen.cpp)
 target_include_directories(test_mapgen PRIVATE src)
 target_link_libraries(test_mapgen PRIVATE war_sim_core)
-add_test(NAME test_mapgen COMMAND test_mapgen)
+add_test(NAME test_mapgen COMMAND test_mapgen WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(test_units tests/test_units.cpp)
 target_include_directories(test_units PRIVATE src)
 target_link_libraries(test_units PRIVATE war_sim_core)
-add_test(NAME test_units COMMAND test_units)
+add_test(NAME test_units COMMAND test_units WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(test_pathfinding tests/test_pathfinding.cpp)
 target_include_directories(test_pathfinding PRIVATE src)
 target_link_libraries(test_pathfinding PRIVATE war_sim_core)
-add_test(NAME test_pathfinding COMMAND test_pathfinding)
+add_test(NAME test_pathfinding COMMAND test_pathfinding WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(test_combat tests/test_combat.cpp)
 target_include_directories(test_combat PRIVATE src)
 target_link_libraries(test_combat PRIVATE war_sim_core)
-add_test(NAME test_combat COMMAND test_combat)
+add_test(NAME test_combat COMMAND test_combat WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(test_vision tests/test_vision.cpp)
 target_include_directories(test_vision PRIVATE src)
 target_link_libraries(test_vision PRIVATE war_sim_core)
-add_test(NAME test_vision COMMAND test_vision)
+add_test(NAME test_vision COMMAND test_vision WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(test_ai tests/test_ai.cpp)
 target_include_directories(test_ai PRIVATE src)
 target_link_libraries(test_ai PRIVATE war_sim_core)
-add_test(NAME test_ai COMMAND test_ai)
+add_test(NAME test_ai COMMAND test_ai WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(test_replay tests/test_replay.cpp)
 target_include_directories(test_replay PRIVATE src)
 target_link_libraries(test_replay PRIVATE war_sim_core)
-add_test(NAME test_replay COMMAND test_replay)
+add_test(NAME test_replay COMMAND test_replay WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(test_train tests/test_train.cpp)
 target_include_directories(test_train PRIVATE src)
 target_link_libraries(test_train PRIVATE war_sim_core Threads::Threads)
-add_test(NAME test_train COMMAND test_train)
+add_test(NAME test_train COMMAND test_train WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # ==============================================================================
 # All C Test Runner Target

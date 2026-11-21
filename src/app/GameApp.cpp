@@ -190,8 +190,9 @@ void GameApp::processEvents() {
         } else if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 m_running = false;
+#ifndef NDEBUG
             } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F1) {
-                // TODO: [DEBUG ONLY - F1] Xóa chế độ điều khiển thử nghiệm này khi tích hợp AI
+                // [DEBUG ONLY - F1] Chế độ điều khiển thử nghiệm đổi phe
                 m_worldSim.toggleControlledFaction();
                 // Bỏ chọn toàn bộ quân khi đổi phe (M6)
                 for (auto& u : m_worldSim.getUnits()) {
@@ -208,7 +209,7 @@ void GameApp::processEvents() {
                     m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(vf), m_worldSim.getUnits(), vf, m_debugFogDisabled);
                 }
             } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F2) {
-                // TODO: [DEBUG ONLY - F2] Bật/tắt sương mù chiến tranh để debug
+                // [DEBUG ONLY - F2] Bật/tắt sương mù chiến tranh để debug
                 m_debugFogDisabled = !m_debugFogDisabled;
                 m_notificationText = m_debugFogDisabled ? "[DEBUG F2] Suong mu: TAT (Hien toan ban do)"
                                                         : "[DEBUG F2] Suong mu: BAT (Theo tam nhin thuc te)";
@@ -218,6 +219,7 @@ void GameApp::processEvents() {
                     m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(vf), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
                     m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(vf), m_worldSim.getUnits(), vf, m_debugFogDisabled);
                 }
+#endif
             } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F3) {
                 // [DEBUG F3] Bật/tắt AI phe Enemy để kiểm thử
                 m_aiEnabled = !m_aiEnabled;
@@ -570,7 +572,8 @@ void GameApp::render() {
     SDL_Color seedColor{255, 220, 100, 255};
     m_textRenderer.renderText(renderer, seedBuffer, 16, 42, seedColor, true);
 
-    // TODO: [DEBUG ONLY - F1 & F2 & F3]
+#ifndef NDEBUG
+    // [DEBUG ONLY - F1 & F2 & F3]
     bool isPlayerCtrl = (viewingFaction == sim::Faction::Player);
     char f1Buffer[160];
     std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s  |  [F3] AI: %s (%s)",
@@ -580,6 +583,7 @@ void GameApp::render() {
                   m_aiSourceLabel.c_str());
     SDL_Color f1Color = isPlayerCtrl ? SDL_Color{100, 200, 255, 255} : SDL_Color{255, 120, 110, 255};
     m_textRenderer.renderText(renderer, f1Buffer, 16, 68, f1Color, true);
+#endif
 
     // 4. Hiển thị đồng hồ thời gian còn lại của trận đấu ở giữa phía trên màn hình (M5)
     int remainingSec = m_worldSim.getRemainingTimeSec();
