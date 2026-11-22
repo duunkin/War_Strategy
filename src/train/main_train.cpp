@@ -248,6 +248,8 @@ int main(int argc, char* argv[]) {
             config.validationSeeds = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--max-ticks" && i + 1 < argc) {
             config.maxTicks = std::stoull(argv[++i]);
+        } else if (arg == "--stall-ticks" && i + 1 < argc) {
+            config.stallTicks = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--threads" && i + 1 < argc) {
             config.threadCount = static_cast<uint32_t>(std::stoul(argv[++i]));
             threadsExplicitlySet = true;

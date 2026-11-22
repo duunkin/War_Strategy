@@ -116,6 +116,7 @@ struct TrainerConfig {
     uint32_t     populationSize{8};    // Kích thước quần thể (evo)
     uint32_t     seedsPerGen{6};       // Số seed bản đồ mỗi thế hệ (mỗi seed chạy 1 cặp mirror = 2 trận)
     uint64_t     maxTicks{24000};      // Giới hạn tick mỗi trận (24000 tick = 20 phút in-game)
+    uint32_t     stallTicks{2400};     // Số tick liên tiếp không đơn vị nào đổi vị trí/máu/quân thì dừng sớm (M9.7 deadlock detection, 0: tắt)
     uint32_t     threadCount{1};       // Số luồng CPU chạy song song
     uint64_t     masterSeed{12345ULL}; // Master seed tất định
     uint32_t     validationSeeds{8};   // Số seed validation cố định đánh giá top-3
@@ -199,7 +200,8 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
                                      LiveTelemetryWatch* liveWatch = nullptr,
                                      int matchIndex = 0,
                                      int printEvery = 20,
-                                     const std::atomic<bool>* stopRequested = nullptr);
+                                     const std::atomic<bool>* stopRequested = nullptr,
+                                     uint32_t stallTicks = 2400);
 
 /**
  * @brief Chạy 1 cặp Mirror Match (Trận A: Cand Blue vs Opp Red; Trận B: Opp Blue vs Cand Red)
@@ -211,7 +213,8 @@ MirrorPairResult evaluatePair(const AiParams& candidate,
                               LiveTelemetryWatch* liveWatch = nullptr,
                               int matchBaseIndex = 0,
                               int printEvery = 20,
-                              const std::atomic<bool>* stopRequested = nullptr);
+                              const std::atomic<bool>* stopRequested = nullptr,
+                              uint32_t stallTicks = 2400);
 
 // =============================================================================
 // Class AiTrainer: Điều phối toàn bộ quá trình huấn luyện đa luồng

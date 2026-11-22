@@ -257,7 +257,8 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
                                      LiveTelemetryWatch* liveWatch,
                                      int matchIndex,
                                      int printEvery,
-                                     const std::atomic<bool>* stopRequested) {
+                                     const std::atomic<bool>* stopRequested,
+                                     uint32_t stallTicks) {
     SingleMatchResult res;
     res.candidateIsPlayer = candidateIsPlayer;
 
@@ -277,6 +278,17 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
     TacticalAI aiPlayer(sim::Faction::Player, seed ^ 0xAAAA5555ULL, playerParams);
     TacticalAI aiEnemy(sim::Faction::Enemy, seed ^ 0x5555AAAAULL, enemyParams);
 
+    // Cấu trúc theo dõi bế tắc (M9.7 Deadlock Detection)
+    struct UnitStateSummary {
+        int posX{0};
+        int posY{0};
+        int troops{0};
+        int hp{0};
+        bool isDead{false};
+    };
+    std::vector<UnitStateSummary> lastStates;
+    uint32_t consecutiveStallTicks = 0;
+
     for (uint64_t t = 0; t < maxTicks; ++t) {
         if (stopRequested && stopRequested->load()) {
             break;
@@ -288,6 +300,41 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
         aiPlayer.update(sim);
         aiEnemy.update(sim);
         sim.tick();
+
+        // Kiểm tra bế tắc (Deadlock Detection - M9.7)
+        if (stallTicks > 0) {
+            bool anyChange = false;
+            const auto& units = sim.getUnits();
+            if (units.size() != lastStates.size()) {
+                anyChange = true;
+                lastStates.resize(units.size());
+            }
+            for (size_t i = 0; i < units.size(); ++i) {
+                const auto& u = units[i];
+                if (u.getPosX() != lastStates[i].posX ||
+                    u.getPosY() != lastStates[i].posY ||
+                    u.getCurrentUnits() != lastStates[i].troops ||
+                    u.getHp() != lastStates[i].hp ||
+                    u.isDead() != lastStates[i].isDead) {
+                    anyChange = true;
+                    lastStates[i].posX = u.getPosX();
+                    lastStates[i].posY = u.getPosY();
+                    lastStates[i].troops = u.getCurrentUnits();
+                    lastStates[i].hp = u.getHp();
+                    lastStates[i].isDead = u.isDead();
+                }
+            }
+
+            if (anyChange) {
+                consecutiveStallTicks = 0;
+            } else {
+                consecutiveStallTicks++;
+                if (consecutiveStallTicks >= stallTicks) {
+                    // Dừng sớm do bế tắc!
+                    break;
+                }
+            }
+        }
 
         // Gửi telemetry nếu được yêu cầu
         if (liveWatch && printEvery > 0 && ((t % printEvery == 0) || sim.isGameOver())) {
@@ -400,17 +447,18 @@ MirrorPairResult evaluatePair(const AiParams& candidate,
                               LiveTelemetryWatch* liveWatch,
                               int matchBaseIndex,
                               int printEvery,
-                              const std::atomic<bool>* stopRequested) {
+                              const std::atomic<bool>* stopRequested,
+                              uint32_t stallTicks) {
     MirrorPairResult pair;
     pair.seed = seed;
 
     // Trận A: Candidate = Player (Blue), Opponent = Enemy (Red)
     pair.matchA = runSimulationMatch(candidate, opponent, true, seed, maxTicks,
-                                     liveWatch, matchBaseIndex, printEvery, stopRequested);
+                                     liveWatch, matchBaseIndex, printEvery, stopRequested, stallTicks);
 
     // Trận B: Opponent = Player (Blue), Candidate = Enemy (Red)
     pair.matchB = runSimulationMatch(opponent, candidate, false, seed, maxTicks,
-                                     liveWatch, matchBaseIndex + 1, printEvery, stopRequested);
+                                     liveWatch, matchBaseIndex + 1, printEvery, stopRequested, stallTicks);
 
     pair.totalFitness = pair.matchA.fitnessScore + pair.matchB.fitnessScore;
 
@@ -720,7 +768,8 @@ bool AiTrainer::runEvolution() {
                                                         watch,
                                                         task.matchBaseIdx,
                                                         m_config.printEvery,
-                                                        &m_stopRequested);
+                                                        &m_stopRequested,
+                                                        m_config.stallTicks);
 
                 simTicksTotal.fetch_add(pairRes.matchA.finalTick + pairRes.matchB.finalTick);
                 completedMatches.fetch_add(2);
@@ -909,7 +958,7 @@ bool AiTrainer::runEvolution() {
             for (uint64_t vSeed : validationSeeds) {
                 MirrorPairResult valPair = evaluatePair(population[k].params, baselineParams, vSeed,
                                                         m_config.maxTicks, nullptr, totalMatchesRun + 1,
-                                                        0, &m_stopRequested);
+                                                        0, &m_stopRequested, m_config.stallTicks);
                 totalMatchesRun += 2;
                 allTimeSimTicks += (valPair.matchA.finalTick + valPair.matchB.finalTick);
                 valFitSum += valPair.totalFitness;
@@ -1083,7 +1132,8 @@ bool AiTrainer::runAdaptation() {
         LiveTelemetryWatch* watch = (!m_config.quietOutput) ? &m_liveWatch : nullptr;
         MirrorPairResult pair = evaluatePair(currentCandidate, baselineParams, seed,
                                              m_config.maxTicks, watch, totalMatchesRun + 1,
-                                             m_config.printEvery, &m_stopRequested);
+                                             m_config.printEvery, &m_stopRequested,
+                                             m_config.stallTicks);
         totalMatchesRun += 2;
         allTimeSimTicks += (pair.matchA.finalTick + pair.matchB.finalTick);
 
@@ -1128,7 +1178,8 @@ bool AiTrainer::runAdaptation() {
             for (uint64_t tSeed : adaptSeeds) {
                 MirrorPairResult curRes = evaluatePair(currentCandidate, baselineParams, tSeed,
                                                        m_config.maxTicks, watch, totalMatchesRun + 1,
-                                                       m_config.printEvery, &m_stopRequested);
+                                                       m_config.printEvery, &m_stopRequested,
+                                                       m_config.stallTicks);
                 totalMatchesRun += 2;
                 allTimeSimTicks += (curRes.matchA.finalTick + curRes.matchB.finalTick);
                 currentTotalFit += curRes.totalFitness;
@@ -1136,7 +1187,8 @@ bool AiTrainer::runAdaptation() {
 
                 MirrorPairResult adaptRes = evaluatePair(adapted, baselineParams, tSeed,
                                                          m_config.maxTicks, watch, totalMatchesRun + 1,
-                                                         m_config.printEvery, &m_stopRequested);
+                                                         m_config.printEvery, &m_stopRequested,
+                                                         m_config.stallTicks);
                 totalMatchesRun += 2;
                 allTimeSimTicks += (adaptRes.matchA.finalTick + adaptRes.matchB.finalTick);
                 adaptedTotalFit += adaptRes.totalFitness;

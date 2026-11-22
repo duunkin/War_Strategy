@@ -421,6 +421,44 @@ void testBestSelectionBasedOnValidation() {
     std::cout << "  -> PASSED: Best profile duoc luu da duoc kiem chung trung khop 100% voi ket qua Validation doc lap!\n";
 }
 
+// =============================================================================
+// TEST 7: Deadlock Early Stop Equivalent to Max Ticks (M9.7 Step 3)
+// =============================================================================
+void testDeadlockEarlyStopEquivalentToMaxTicks() {
+    std::cout << "[TestTrain] 7. Kiem tra dung som do be tac (stallTicks) khop 100% ket qua maxTicks (Test 7)...\n";
+
+    AiParams p1{};
+    AiParams p2{};
+
+    // Chạy kiểm thử trên 5 seed độc lập
+    const std::vector<uint64_t> testSeeds = {7919ULL, 15838ULL, 23757ULL, 39595ULL, 55433ULL};
+    const uint64_t maxTicks = 12000;
+    const uint32_t stallTicks = 2400;
+
+    for (uint64_t seed : testSeeds) {
+        // Trận có dừng sớm (stallTicks = 2400)
+        SingleMatchResult resEarly = runSimulationMatch(p1, p2, true, seed, maxTicks, nullptr, 0, 0, nullptr, stallTicks);
+
+        // Trận chạy đủ maxTicks (stallTicks = 0: tắt dừng sớm)
+        SingleMatchResult resFull = runSimulationMatch(p1, p2, true, seed, maxTicks, nullptr, 0, 0, nullptr, 0);
+
+        assert(resEarly.isWin == resFull.isWin && "Ket qua thang phai khop giua dung som va maxTicks!");
+        assert(resEarly.isLoss == resFull.isLoss && "Ket qua thua phai khop giua dung som va maxTicks!");
+        assert(resEarly.isDraw == resFull.isDraw && "Ket qua hoa phai khop giua dung som va maxTicks!");
+        assert(resEarly.endKind == resFull.endKind && "EndKind phai khop giua dung som va maxTicks!");
+        assert(resEarly.candidateTotalTroops == resFull.candidateTotalTroops && "Quan so candidate phai khop!");
+        assert(resEarly.opponentTotalTroops == resFull.opponentTotalTroops && "Quan so opponent phai khop!");
+        assert(resEarly.finalTick <= resFull.finalTick && "Tick dung som phai nho hon hoac bang maxTicks!");
+
+        std::cout << "  -> Seed " << seed << ": EarlyTick=" << resEarly.finalTick
+                  << " vs FullTick=" << resFull.finalTick
+                  << " | Result=" << (resEarly.isWin ? "WIN" : (resEarly.isLoss ? "LOSS" : "DRAW"))
+                  << " | Troops=(" << resEarly.candidateTotalTroops << " vs " << resEarly.opponentTotalTroops << ") [OK]\n";
+    }
+
+    std::cout << "  -> PASSED: Dung som khi be tac cho ket qua khop 100% voi maxTicks tren toan bo 5 seed!\n";
+}
+
 int main() {
     std::cout << "========================================================================\n"
               << "War Strategy - AI Self-Play & Trainer Unit Tests (M9)\n"
@@ -432,9 +470,10 @@ int main() {
     testMiniEvolutionEndToEnd();
     testSimulationDeterminismAntiNoise();
     testBestSelectionBasedOnValidation();
+    testDeadlockEarlyStopEquivalentToMaxTicks();
 
     std::cout << "\n========================================================================\n"
-              << "[PASS] TOAN BO 6/6 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
+              << "[PASS] TOAN BO 7/7 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
               << "========================================================================\n";
     return 0;
 }
