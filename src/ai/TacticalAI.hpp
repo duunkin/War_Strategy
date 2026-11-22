@@ -109,6 +109,11 @@ private:
                                                           int targetTileX, int targetTileY,
                                                           float idealRangeTiles);
 
+    [[nodiscard]] sim::TileCoord findPassableTileNear(const sim::WorldSim& sim,
+                                                      int targetX, int targetY,
+                                                      sim::UnitDomain domain, sim::UnitType type,
+                                                      int maxRadius = 15) const;
+
     [[nodiscard]] sim::TileCoord pickScoutingTarget(const sim::WorldSim& sim,
                                                    int scoutIndex, int totalScouts,
                                                    sim::UnitDomain domain, sim::UnitType type);

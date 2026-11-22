@@ -397,8 +397,8 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
 
     bool isSeverelyDamaged = (commander.getHp() < commander.getMaxHp() / 2);
 
-    // Nếu có địch áp sát trong bán kính nguy hiểm hoặc mất máu nặng -> Tháo chạy ngay lập tức!
-    if (m_params.enableCommanderRetreat && (threatCount > 0 || isSeverelyDamaged)) {
+    // Nếu có địch áp sát trong bán kính nguy hiểm hoặc mất máu nặng và có địch trên chiến trường -> Tháo chạy ngay lập tức!
+    if (m_params.enableCommanderRetreat && (threatCount > 0 || (isSeverelyDamaged && !m_memory.empty()))) {
         m_unitIntents[commander.getId()] = "Retreating (Danger)";
         int threatCenterX = (threatCount > 0) ? (threatSumX / threatCount) : (comX + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5));
         int threatCenterY = (threatCount > 0) ? (threatSumY / threatCount) : comY;
@@ -663,12 +663,20 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
             if (!su->hasPath()) {
                 // Tuần tra trinh sát sâu sang nửa bản đồ đối phương
                 sim::TileCoord scoutTarget = pickScoutingTarget(sim, static_cast<int>(i), static_cast<int>(su57s.size()), sim::UnitDomain::Air, sim::UnitType::Su57);
-                sim::Command cmd;
-                cmd.type = sim::CommandType::Move;
-                cmd.move.unitIds = {su->getId()};
-                cmd.move.targetTileX = scoutTarget.x;
-                cmd.move.targetTileY = scoutTarget.y;
-                outCommands.push_back(cmd);
+                if (std::abs(su->getTileX() - scoutTarget.x) <= 4 && std::abs(su->getTileY() - scoutTarget.y) <= 4) {
+                    int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (sim.getMap().getWidth() - 9);
+                    int enemyBaseY = (i % 2 == 0) ? (sim.getMap().getHeight() / 3) : (2 * sim.getMap().getHeight() / 3);
+                    scoutTarget = {enemyBaseX, enemyBaseY};
+                    m_unitIntents[su->getId()] = "Scouting (Deep Air Recon)";
+                }
+                if (scoutTarget.x != su->getTileX() || scoutTarget.y != su->getTileY()) {
+                    sim::Command cmd;
+                    cmd.type = sim::CommandType::Move;
+                    cmd.move.unitIds = {su->getId()};
+                    cmd.move.targetTileX = scoutTarget.x;
+                    cmd.move.targetTileY = scoutTarget.y;
+                    outCommands.push_back(cmd);
+                }
             }
         }
     }
@@ -717,12 +725,19 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
             if (!b2->hasPath()) {
                 // Tuần tra trinh sát các điểm chiến lược
                 sim::TileCoord scoutTarget = pickScoutingTarget(sim, 1, 2, sim::UnitDomain::Air, sim::UnitType::B2Spirit);
-                sim::Command cmd;
-                cmd.type = sim::CommandType::Move;
-                cmd.move.unitIds = {b2->getId()};
-                cmd.move.targetTileX = scoutTarget.x;
-                cmd.move.targetTileY = scoutTarget.y;
-                outCommands.push_back(cmd);
+                if (std::abs(b2->getTileX() - scoutTarget.x) <= 4 && std::abs(b2->getTileY() - scoutTarget.y) <= 4) {
+                    int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (sim.getMap().getWidth() - 9);
+                    int enemyBaseY = sim.getMap().getHeight() / 2;
+                    scoutTarget = {enemyBaseX, enemyBaseY};
+                }
+                if (scoutTarget.x != b2->getTileX() || scoutTarget.y != b2->getTileY()) {
+                    sim::Command cmd;
+                    cmd.type = sim::CommandType::Move;
+                    cmd.move.unitIds = {b2->getId()};
+                    cmd.move.targetTileX = scoutTarget.x;
+                    cmd.move.targetTileY = scoutTarget.y;
+                    outCommands.push_back(cmd);
+                }
             }
         }
     }
@@ -881,14 +896,34 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
         if (!u || u->isDead()) continue;
 
         float hpRatio = static_cast<float>(u->getHp()) / static_cast<float>(std::max(1, u->getMaxHp()));
-        if (m_params.enableUnitRetreat && hpRatio < m_params.retreatHpRatio) {
-            // Rút lui về phía sau
-            int ux = u->getTileX();
-            int uy = u->getTileY();
-            int threatDirX = (m_controlledFaction == sim::Faction::Enemy) ? -5 : 5;
-            sim::TileCoord retreatTile = findSafeRetreatTile(sim, ux, uy, ux + threatDirX, uy, u->getDomain(), u->getType(), 3, 6);
+        int ux = u->getTileX();
+        int uy = u->getTileY();
+
+        // Tìm hiểm họa địch gần nhất trong bộ nhớ tình báo
+        const EnemyMemoryRecord* nearestThreat = nullptr;
+        float minThreatDistSq = std::numeric_limits<float>::max();
+        for (const auto& enemy : m_memory) {
+            int dx = enemy.lastTileX - ux;
+            int dy = enemy.lastTileY - uy;
+            float dSq = static_cast<float>(dx * dx + dy * dy);
+            if (dSq < minThreatDistSq) {
+                minThreatDistSq = dSq;
+                nearestThreat = &enemy;
+            }
+        }
+
+        // Đơn vị chỉ thực sự rút lui khi:
+        // - Được bật cơ chế rút lui (enableUnitRetreat)
+        // - Máu dưới ngưỡng quy định (hpRatio < retreatHpRatio)
+        // - VÀ có hiểm họa địch áp sát gần (trong bán kính 16 ô)
+        bool hasImmediateThreat = (nearestThreat != nullptr && minThreatDistSq <= 16.0f * 16.0f);
+
+        if (m_params.enableUnitRetreat && hpRatio < m_params.retreatHpRatio && hasImmediateThreat) {
+            int threatX = nearestThreat->lastTileX;
+            int threatY = nearestThreat->lastTileY;
+            sim::TileCoord retreatTile = findSafeRetreatTile(sim, ux, uy, threatX, threatY, u->getDomain(), u->getType(), 3, 6);
             if (retreatTile.x != ux || retreatTile.y != uy) {
-                m_unitIntents[u->getId()] = "Retreating (Low HP)";
+                m_unitIntents[u->getId()] = "Retreating (Threat Nearby)";
                 sim::Command cmd;
                 cmd.type = sim::CommandType::Move;
                 cmd.move.unitIds = {u->getId()};
@@ -897,155 +932,210 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                 outCommands.push_back(cmd);
                 continue;
             } else {
-                m_unitIntents[u->getId()] = "Retreating (Edge/Trapped)";
+                m_unitIntents[u->getId()] = "Cornered (Hold & Fight)";
             }
+        } else if (hpRatio < m_params.retreatHpRatio) {
+            m_unitIntents[u->getId()] = "Regrouped (Safe Distance)";
         }
         readyUnits.push_back(u);
     }
 
     if (readyUnits.empty()) return;
 
-    // 2. Nếu đã phát hiện mục tiêu địch: Điều phối tấn công mục tiêu ưu tiên
-    if (!m_memory.empty()) {
-        std::unordered_map<uint32_t, int> targetCounts;
+    // 2. Phân loại các đơn vị có mục tiêu hợp lệ để tấn công
+    std::vector<const sim::Unit*> unassignedUnits;
+    std::unordered_map<uint32_t, int> targetCounts;
 
-        for (const auto* u : readyUnits) {
-            int ux = u->getTileX();
-            int uy = u->getTileY();
+    for (const auto* u : readyUnits) {
+        int ux = u->getTileX();
+        int uy = u->getTileY();
 
-            const EnemyMemoryRecord* bestEnemy = nullptr;
-            float bestScore = -1.0f;
+        const EnemyMemoryRecord* bestEnemy = nullptr;
+        float bestScore = -1.0f;
 
-            for (const auto& enemy : m_memory) {
-                // Kiểm tra vũ khí của đơn vị có thể bắn mục tiêu này không
-                bool canHit = false;
-                if (enemy.domain == sim::UnitDomain::Land && u->canTargetGround()) canHit = true;
-                if (enemy.domain == sim::UnitDomain::Air && u->canTargetAir()) canHit = true;
-                if (enemy.domain == sim::UnitDomain::Sea && u->canTargetSea()) canHit = true;
-                if (!canHit && enemy.domain == sim::UnitDomain::Air) continue; // Bỏ qua máy bay nếu không có vũ khí phòng không
+        for (const auto& enemy : m_memory) {
+            // Kiểm tra vũ khí của đơn vị có thể bắn mục tiêu này không
+            bool canHit = false;
+            if (enemy.domain == sim::UnitDomain::Land && u->canTargetGround()) canHit = true;
+            if (enemy.domain == sim::UnitDomain::Air && u->canTargetAir()) canHit = true;
+            if (enemy.domain == sim::UnitDomain::Sea && u->canTargetSea()) canHit = true;
+            if (!canHit) continue; // Bỏ qua mục tiêu không thể tấn công
 
-                int dx = enemy.lastTileX - ux;
-                int dy = enemy.lastTileY - uy;
-                float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+            int dx = enemy.lastTileX - ux;
+            int dy = enemy.lastTileY - uy;
+            float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
 
-                // Tính điểm ưu tiên theo từng loại quân
-                float priority = 1.0f;
-                if (u->getType() == sim::UnitType::Leopard2A || u->getType() == sim::UnitType::T14Armata) {
-                    // Tăng ưu tiên bắn tăng địch, pháo địch
-                    if (enemy.type == sim::UnitType::Leopard2A || enemy.type == sim::UnitType::T14Armata) priority = 3.5f;
-                    else if (enemy.type == sim::UnitType::Caesar) priority = 3.0f;
-                    else if (enemy.type == sim::UnitType::Puma) priority = 2.0f;
-                    else if (enemy.type == sim::UnitType::Commander) priority = 5.0f;
-                } else if (u->getType() == sim::UnitType::Infantry) {
-                    // Bộ binh ưu tiên mục tiêu gần và bộ binh/thiết giáp địch
-                    if (enemy.type == sim::UnitType::Infantry) priority = 2.5f;
-                    else if (enemy.type == sim::UnitType::Commander) priority = 4.0f;
-                } else if (u->getType() == sim::UnitType::Puma) {
-                    // Puma ưu tiên truy quét pháo và mục tiêu mỏng
-                    if (enemy.type == sim::UnitType::Caesar) priority = 4.0f;
-                    else if (enemy.type == sim::UnitType::Puma) priority = 2.5f;
-                    else if (enemy.type == sim::UnitType::Commander) priority = 5.0f;
-                }
+            // Tính điểm ưu tiên theo từng loại quân
+            float priority = 1.0f;
+            if (u->getType() == sim::UnitType::Leopard2A || u->getType() == sim::UnitType::T14Armata) {
+                // Tăng ưu tiên bắn tăng địch, pháo địch
+                if (enemy.type == sim::UnitType::Leopard2A || enemy.type == sim::UnitType::T14Armata) priority = 3.5f;
+                else if (enemy.type == sim::UnitType::Caesar) priority = 3.0f;
+                else if (enemy.type == sim::UnitType::Puma) priority = 2.0f;
+                else if (enemy.type == sim::UnitType::Commander) priority = 5.0f;
+            } else if (u->getType() == sim::UnitType::Infantry) {
+                // Bộ binh ưu tiên mục tiêu gần và bộ binh/thiết giáp địch
+                if (enemy.type == sim::UnitType::Infantry) priority = 2.5f;
+                else if (enemy.type == sim::UnitType::Commander) priority = 4.0f;
+            } else if (u->getType() == sim::UnitType::Puma) {
+                // Puma ưu tiên truy quét pháo và mục tiêu mỏng
+                if (enemy.type == sim::UnitType::Caesar) priority = 4.0f;
+                else if (enemy.type == sim::UnitType::Puma) priority = 2.5f;
+                else if (enemy.type == sim::UnitType::Commander) priority = 5.0f;
+            }
 
-                // Bảo vệ Tư lệnh: Nếu địch xâm nhập vùng an toàn của Tư lệnh (theo commanderSafeRadiusTiles), tăng mạnh ưu tiên đánh chặn
-                if (commander) {
-                    int cdx = enemy.lastTileX - commander->getTileX();
-                    int cdy = enemy.lastTileY - commander->getTileY();
-                    float distCmdSq = static_cast<float>(cdx * cdx + cdy * cdy);
-                    float safeRadiusSq = m_params.commanderSafeRadiusTiles * m_params.commanderSafeRadiusTiles;
-                    if (distCmdSq <= safeRadiusSq) {
-                        priority += 5.0f;
-                    }
-                }
-
-                // Dồn hỏa lực (focusFireWeight): nhân vào điểm ưu tiên của mục tiêu đang bị nhiều đơn vị ta nhắm; nếu 1.0 thì giữ hành vi cũ
-                auto itCount = targetCounts.find(enemy.unitId);
-                if (itCount != targetCounts.end() && itCount->second > 0) {
-                    priority *= std::pow(m_params.focusFireWeight, static_cast<float>(itCount->second));
-                }
-
-                // Cân nhắc khoảng cách: aggression cao sẵn sàng truy kích mục tiêu xa hơn
-                float distPenalty = 0.15f / std::clamp(m_params.aggression, 0.2f, 2.0f);
-                float score = priority / (1.0f + dist * distPenalty);
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestEnemy = &enemy;
+            // Bảo vệ Tư lệnh: Nếu địch xâm nhập vùng an toàn của Tư lệnh (theo commanderSafeRadiusTiles), tăng mạnh ưu tiên đánh chặn
+            if (commander) {
+                int cdx = enemy.lastTileX - commander->getTileX();
+                int cdy = enemy.lastTileY - commander->getTileY();
+                float distCmdSq = static_cast<float>(cdx * cdx + cdy * cdy);
+                float safeRadiusSq = m_params.commanderSafeRadiusTiles * m_params.commanderSafeRadiusTiles;
+                if (distCmdSq <= safeRadiusSq) {
+                    priority += 5.0f;
                 }
             }
 
-            if (bestEnemy) {
-                m_unitIntents[u->getId()] = "Attacking (Target " + std::to_string(bestEnemy->unitId) + ")";
-                targetCounts[bestEnemy->unitId]++;
-                int targetX = bestEnemy->lastTileX;
-                int targetY = bestEnemy->lastTileY;
+            // Dồn hỏa lực (focusFireWeight): nhân vào điểm ưu tiên của mục tiêu đang bị nhiều đơn vị ta nhắm; nếu 1.0 thì giữ hành vi cũ
+            auto itCount = targetCounts.find(enemy.unitId);
+            if (itCount != targetCounts.end() && itCount->second > 0) {
+                priority *= std::pow(m_params.focusFireWeight, static_cast<float>(itCount->second));
+            }
 
-                // Với bộ binh: tìm ô địa hình có lợi (Rừng/Đồi) gần mục tiêu trong bán kính 2-3 ô để tận dụng cover
-                if (u->getType() == sim::UnitType::Infantry) {
-                    for (int r = 1; r <= 3; ++r) {
-                        bool foundCover = false;
-                        for (int dy = -r; dy <= r; ++dy) {
-                            for (int dx = -r; dx <= r; ++dx) {
-                                int cx = targetX + dx;
-                                int cy = targetY + dy;
-                                if (!map.isInBounds(cx, cy)) continue;
+            // Cân nhắc khoảng cách: aggression cao sẵn sàng truy kích mục tiêu xa hơn
+            float distPenalty = 0.15f / std::clamp(m_params.aggression, 0.2f, 2.0f);
+            float score = priority / (1.0f + dist * distPenalty);
+            if (score > bestScore) {
+                bestScore = score;
+                bestEnemy = &enemy;
+            }
+        }
 
-                                sim::DetailedTerrainType dt = sim.getConfig().classifyTerrain(map, cx, cy);
-                                if (dt == sim::DetailedTerrainType::Forest || dt == sim::DetailedTerrainType::Hill) {
-                                    if (sim.getConfig().isPassable(dt, u->getDomain(), u->getType())) {
-                                        targetX = cx;
-                                        targetY = cy;
-                                        foundCover = true;
-                                        break;
-                                    }
+        if (bestEnemy) {
+            m_unitIntents[u->getId()] = "Attacking (Target " + std::to_string(bestEnemy->unitId) + ")";
+            targetCounts[bestEnemy->unitId]++;
+            int targetX = bestEnemy->lastTileX;
+            int targetY = bestEnemy->lastTileY;
+
+            // Với bộ binh: tìm ô địa hình có lợi (Rừng/Đồi) gần mục tiêu trong bán kính 2-3 ô để tận dụng cover
+            if (u->getType() == sim::UnitType::Infantry) {
+                for (int r = 1; r <= 3; ++r) {
+                    bool foundCover = false;
+                    for (int dy = -r; dy <= r; ++dy) {
+                        for (int dx = -r; dx <= r; ++dx) {
+                            int cx = targetX + dx;
+                            int cy = targetY + dy;
+                            if (!map.isInBounds(cx, cy)) continue;
+
+                            sim::DetailedTerrainType dt = sim.getConfig().classifyTerrain(map, cx, cy);
+                            if (dt == sim::DetailedTerrainType::Forest || dt == sim::DetailedTerrainType::Hill) {
+                                if (sim.getConfig().isPassable(dt, u->getDomain(), u->getType())) {
+                                    targetX = cx;
+                                    targetY = cy;
+                                    foundCover = true;
+                                    break;
                                 }
                             }
-                            if (foundCover) break;
                         }
                         if (foundCover) break;
                     }
+                    if (foundCover) break;
                 }
-
-                if (u->hasPath() && u->getFinalTargetTile().x == targetX && u->getFinalTargetTile().y == targetY) {
-                    continue; // Đang đi mượt trên đường tới đúng mục tiêu
-                }
-
-                sim::Command cmd;
-                cmd.type = sim::CommandType::Move;
-                cmd.move.unitIds = {u->getId()};
-                cmd.move.targetTileX = targetX;
-                cmd.move.targetTileY = targetY;
-                outCommands.push_back(cmd);
-            } else {
-                m_unitIntents[u->getId()] = "Holding (No Valid Target)";
             }
+
+            if (u->hasPath() && u->getFinalTargetTile().x == targetX && u->getFinalTargetTile().y == targetY) {
+                continue; // Đang đi mượt trên đường tới đúng mục tiêu
+            }
+
+            sim::Command cmd;
+            cmd.type = sim::CommandType::Move;
+            cmd.move.unitIds = {u->getId()};
+            cmd.move.targetTileX = targetX;
+            cmd.move.targetTileY = targetY;
+            outCommands.push_back(cmd);
+        } else {
+            // Đơn vị chưa có mục tiêu thích hợp: đưa vào nhóm trinh sát & cơ động
+            unassignedUnits.push_back(u);
         }
     }
-    // 3. Khi CHƯA thấy địch: Chia lực lượng trinh sát & tiến công đa hướng
-    else {
-        // Nhóm Puma: trinh sát tiền tiêu (scoutingWeight & scoutingGroupCount điều khiển số lượng và độ vươn xa)
+
+    // 3. Với các đơn vị chưa có mục tiêu trực diện: Chia lực lượng trinh sát & tiến công đa hướng
+    if (!unassignedUnits.empty()) {
+        // Nhóm trinh sát tiền tiêu (scoutingWeight & scoutingGroupCount điều khiển số lượng và độ vươn xa)
         int maxScouts = std::clamp(static_cast<int>(std::round(m_params.scoutingGroupCount * std::clamp(m_params.scoutingWeight, 0.4f, 2.0f))), 1, 8);
         int scoutCount = 0;
         std::vector<const sim::Unit*> combatUnits;
 
-        for (const auto* u : readyUnits) {
+        // Ưu tiên 1: Giao nhiệm vụ trinh sát cho Puma
+        for (const auto* u : unassignedUnits) {
             if (u->getType() == sim::UnitType::Puma && scoutCount < maxScouts) {
                 m_unitIntents[u->getId()] = "Scouting (Puma Recon)";
                 if (!u->hasPath()) {
                     sim::TileCoord scoutTarget = pickScoutingTarget(
-                        sim, scoutCount++, maxScouts,
+                        sim, scoutCount, maxScouts,
                         u->getDomain(), u->getType()
                     );
-                    sim::Command cmd;
-                    cmd.type = sim::CommandType::Move;
-                    cmd.move.unitIds = {u->getId()};
-                    cmd.move.targetTileX = scoutTarget.x;
-                    cmd.move.targetTileY = scoutTarget.y;
-                    outCommands.push_back(cmd);
+                    // Nếu đã tới gần điểm trinh sát ban đầu: đẩy sâu về phía căn cứ đối phương
+                    if (std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
+                        int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (map.getWidth() - 9);
+                        int enemyBaseY = (scoutCount % 2 == 0) ? (map.getHeight() / 3) : (2 * map.getHeight() / 3);
+                        scoutTarget = findPassableTileNear(sim, enemyBaseX, enemyBaseY, u->getDomain(), u->getType(), 15);
+                        m_unitIntents[u->getId()] = "Scouting (Deep Recon)";
+                    }
+                    if (scoutTarget.x != u->getTileX() || scoutTarget.y != u->getTileY()) {
+                        sim::Command cmd;
+                        cmd.type = sim::CommandType::Move;
+                        cmd.move.unitIds = {u->getId()};
+                        cmd.move.targetTileX = scoutTarget.x;
+                        cmd.move.targetTileY = scoutTarget.y;
+                        outCommands.push_back(cmd);
+                    }
                 }
+                scoutCount++;
             } else {
                 combatUnits.push_back(u);
             }
         }
+
+        // Ưu tiên 2: Nếu thiếu Puma (hoặc Puma đã chết), chỉ định bổ sung trinh sát từ combatUnits
+        if (scoutCount < maxScouts && !combatUnits.empty()) {
+            std::vector<const sim::Unit*> nonScouts;
+            for (const auto* u : combatUnits) {
+                if (scoutCount < maxScouts) {
+                    m_unitIntents[u->getId()] = "Scouting (Forward Recon)";
+                    if (!u->hasPath()) {
+                        sim::TileCoord scoutTarget = pickScoutingTarget(
+                            sim, scoutCount, maxScouts,
+                            u->getDomain(), u->getType()
+                        );
+                        if (std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
+                            int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (map.getWidth() - 9);
+                            int enemyBaseY = (scoutCount % 2 == 0) ? (map.getHeight() / 3) : (2 * map.getHeight() / 3);
+                            scoutTarget = findPassableTileNear(sim, enemyBaseX, enemyBaseY, u->getDomain(), u->getType(), 15);
+                            m_unitIntents[u->getId()] = "Scouting (Deep Recon)";
+                        }
+                        if (scoutTarget.x != u->getTileX() || scoutTarget.y != u->getTileY()) {
+                            sim::Command cmd;
+                            cmd.type = sim::CommandType::Move;
+                            cmd.move.unitIds = {u->getId()};
+                            cmd.move.targetTileX = scoutTarget.x;
+                            cmd.move.targetTileY = scoutTarget.y;
+                            outCommands.push_back(cmd);
+                        }
+                    }
+                    scoutCount++;
+                } else {
+                    nonScouts.push_back(u);
+                }
+            }
+            combatUnits = std::move(nonScouts);
+        }
+
+        // Sắp xếp combatUnits: đơn vị còn nhiều máu ưu tiên xung kích tiền tuyến, đơn vị ít máu giữ hậu tuyến
+        std::sort(combatUnits.begin(), combatUnits.end(), [](const sim::Unit* a, const sim::Unit* b) {
+            float hpA = static_cast<float>(a->getHp()) / static_cast<float>(std::max(1, a->getMaxHp()));
+            float hpB = static_cast<float>(b->getHp()) / static_cast<float>(std::max(1, b->getMaxHp()));
+            return hpA > hpB;
+        });
 
         // Nhóm Tăng chủ lực & Bộ binh: aggression điều khiển tỉ lệ tấn công vs giữ hậu phương và cự ly tiến quân
         int halfW = map.getWidth() / 2;
@@ -1055,7 +1145,7 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
 
         // Tỉ lệ quân tham gia tiến công (thay vì ở lại bảo vệ hậu tuyến)
         float attackRatio = std::clamp(0.25f + 0.75f * (m_params.aggression / 1.5f), 0.25f, 1.0f);
-        int maxAttackers = std::max(1, static_cast<int>(std::round(combatUnits.size() * attackRatio)));
+        int maxAttackers = std::max(1, static_cast<int>(std::round(static_cast<float>(combatUnits.size()) * attackRatio)));
 
         int cmdX = (commander) ? commander->getTileX() : ((m_controlledFaction == sim::Faction::Enemy) ? (map.getWidth() - 12) : 12);
         int guardOffset = std::clamp(static_cast<int>(m_params.commanderSafeRadiusTiles * 0.45f), 2, 12);
@@ -1077,32 +1167,46 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                       : (sector == 1) ? (map.getHeight() / 2)
                                       : (3 * map.getHeight() / 4);
 
-            // Kiểm tra và tìm ô passable gần destX, destY
-            for (int r = 0; r < 15; ++r) {
-                bool found = false;
-                for (int dy = -r; dy <= r; ++dy) {
-                    for (int dx = -r; dx <= r; ++dx) {
-                        int nx = destX + dx;
-                        int ny = destY + dy;
-                        if (!map.isInBounds(nx, ny)) continue;
-                        sim::DetailedTerrainType dt = sim.getConfig().classifyTerrain(map, nx, ny);
-                        if (sim.getConfig().isPassable(dt, u->getDomain(), u->getType())) {
-                            sim::Command cmd;
-                            cmd.type = sim::CommandType::Move;
-                            cmd.move.unitIds = {u->getId()};
-                            cmd.move.targetTileX = nx;
-                            cmd.move.targetTileY = ny;
-                            outCommands.push_back(cmd);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (found) break;
-                }
-                if (found) break;
+            // NẾU đơn vị tấn công đã đến tuyến tập kết offensiveDestX mà vẫn không thấy địch:
+            // Đẩy sâu hơn về phía căn cứ đối phương để tìm diệt!
+            if (isAttacking && std::abs(u->getTileX() - offensiveDestX) <= 4) {
+                destX = (m_controlledFaction == sim::Faction::Enemy) ? 10 : (map.getWidth() - 11);
+                m_unitIntents[u->getId()] = "Advancing (Push Enemy Base)";
+            }
+
+            sim::TileCoord targetTile = findPassableTileNear(sim, destX, destY, u->getDomain(), u->getType(), 15);
+            if (targetTile.x != u->getTileX() || targetTile.y != u->getTileY()) {
+                sim::Command cmd;
+                cmd.type = sim::CommandType::Move;
+                cmd.move.unitIds = {u->getId()};
+                cmd.move.targetTileX = targetTile.x;
+                cmd.move.targetTileY = targetTile.y;
+                outCommands.push_back(cmd);
             }
         }
     }
+}
+
+sim::TileCoord TacticalAI::findPassableTileNear(const sim::WorldSim& sim,
+                                                int targetX, int targetY,
+                                                sim::UnitDomain domain, sim::UnitType type,
+                                                int maxRadius) const {
+    const auto& map = sim.getMap();
+    for (int r = 0; r <= maxRadius; ++r) {
+        for (int dy = -r; dy <= r; ++dy) {
+            for (int dx = -r; dx <= r; ++dx) {
+                if (r > 0 && std::abs(dx) != r && std::abs(dy) != r) continue;
+                int nx = targetX + dx;
+                int ny = targetY + dy;
+                if (!map.isInBounds(nx, ny)) continue;
+                sim::DetailedTerrainType dt = sim.getConfig().classifyTerrain(map, nx, ny);
+                if (sim.getConfig().isPassable(dt, domain, type)) {
+                    return {nx, ny};
+                }
+            }
+        }
+    }
+    return {std::clamp(targetX, 1, map.getWidth() - 2), std::clamp(targetY, 1, map.getHeight() - 2)};
 }
 
 sim::TileCoord TacticalAI::findSafeRetreatTile(const sim::WorldSim& sim,
