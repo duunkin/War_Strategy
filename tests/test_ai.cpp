@@ -519,6 +519,52 @@ void testParameterEffectiveness() {
         std::cout << "  - Tham so 'enableCommanderRetreat': Da kiem chung bat/tat rut lui Tu lenh." << std::endl;
     }
 
+    // 5.7. Kiem tra tham so 'threatRadiusTiles' (ban kinh kich hoat rut lui don vi bi thuong)
+    {
+        WorldMap map(128, 96, 32);
+        WorldSim sim(map);
+        initSim(sim);
+
+        const auto* tankCfg = sim.getConfig().getUnitConfig(UnitType::Leopard2A);
+        const auto* infCfg = sim.getConfig().getUnitConfig(UnitType::Infantry);
+
+        // Don vi ta (Leopard 2A) tai (50, 50), bi thuong nang con 20% mau (< retreatHpRatio 0.30)
+        sim.getUnits().emplace_back(50, Faction::Player, UnitType::Leopard2A, 50000, 50000, *tankCfg);
+        sim.getUnits().back().takeDamage(sim.getUnits().back().getMaxHp() * 80 / 100); // Con 20% mau
+
+        // Dich (Infantry) tai (50, 62) -> khoang cach = 12 o
+        sim.getUnits().emplace_back(51, Faction::Enemy, UnitType::Infantry, 50000, 62000, *infCfg);
+        sim.updateVision();
+
+        // Truong hop 1: threatRadiusTiles = 8.0f (< 12 o) -> dich nam ngoai ban kinh nguy hiem -> khong chay
+        AiParams pSmallThreat;
+        pSmallThreat.threatRadiusTiles = 8.0f;
+        TacticalAI aiSmallThreat(Faction::Player, SEED, pSmallThreat);
+        auto cmdsSmall = aiSmallThreat.plan(sim);
+        bool smallRetreated = false;
+        for (const auto& c : cmdsSmall) {
+            // If retreat, destination will be away from (50, 62)
+            if (c.type == CommandType::Move && !c.move.unitIds.empty() && c.move.unitIds[0] == 50) {
+                if (c.move.targetTileY < 50) smallRetreated = true;
+            }
+        }
+
+        // Truong hop 2: threatRadiusTiles = 16.0f (>= 12 o) -> dich nam trong ban kinh nguy hiem -> lui gap
+        AiParams pLargeThreat;
+        pLargeThreat.threatRadiusTiles = 16.0f;
+        TacticalAI aiLargeThreat(Faction::Player, SEED, pLargeThreat);
+        auto cmdsLarge = aiLargeThreat.plan(sim);
+        bool largeRetreated = false;
+        for (const auto& c : cmdsLarge) {
+            if (c.type == CommandType::Move && !c.move.unitIds.empty() && c.move.unitIds[0] == 50) {
+                if (c.move.targetTileY < 50) largeRetreated = true;
+            }
+        }
+
+        assert(!smallRetreated && largeRetreated && "threatRadiusTiles phai quyet dinh don vi bi thuong lui hay dung lai!");
+        std::cout << "  - Tham so 'threatRadiusTiles': Da kiem chung ban kinh nguy hiem kich hoat rut lui (8.0 o vs 16.0 o)." << std::endl;
+    }
+
     std::cout << "  -> PASSED: Toan bo cac tham so AI deu da duoc chung minh co tac dung thuc te 100%!" << std::endl;
 }
 

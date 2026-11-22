@@ -935,10 +935,11 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
         // Đơn vị chỉ thực sự rút lui khi:
         // - Được bật cơ chế rút lui (enableUnitRetreat)
         // - Máu dưới ngưỡng quy định (hpRatio < retreatHpRatio)
-        // - VÀ có hiểm họa địch áp sát gần (trong bán kính 16 ô nếu enableSafeRetreatExit)
+        // - VÀ có hiểm họa địch áp sát gần (trong bán kính threatRadiusTiles nếu enableSafeRetreatExit)
         bool hasImmediateThreat = false;
         if (m_ablationFlags.enableSafeRetreatExit) {
-            hasImmediateThreat = (nearestThreat != nullptr && minThreatDistSq <= 16.0f * 16.0f);
+            float threatRadiusSq = m_params.threatRadiusTiles * m_params.threatRadiusTiles;
+            hasImmediateThreat = (nearestThreat != nullptr && minThreatDistSq <= threatRadiusSq);
         } else {
             hasImmediateThreat = true; // Cũ: Luôn rút lui vô điều kiện nếu máu thấp
         }

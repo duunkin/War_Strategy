@@ -623,6 +623,7 @@ AiParams AiTrainer::mutate(const AiParams& p, float mutationRate, mapgen::FastRn
     mutateFloat(res.artilleryIdealRangeRatio, 0.25f);
     mutateFloat(res.scoutingWeight, 1.2f);
     mutateFloat(res.focusFireWeight, 1.2f);
+    mutateFloat(res.threatRadiusTiles, 8.0f);
 
     if (static_cast<float>(rng.range(0, 1000)) / 1000.0f < mutationRate) {
         int d = rng.range(-40, 40);

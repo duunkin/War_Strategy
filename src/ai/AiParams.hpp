@@ -49,6 +49,9 @@ struct AiParams {
     // Số mũi trinh sát độc lập khi chưa phát hiện địch
     int scoutingGroupCount{3};
 
+    // Bán kính hiểm họa (tiles): Đơn vị bị thương chỉ rút lui nếu có địch trong bán kính này (thoát rút lui nếu an toàn)
+    float threatRadiusTiles{16.0f};
+
     bool operator==(const AiParams& o) const {
         return decisionIntervalTicks == o.decisionIntervalTicks &&
                std::abs(aggression - o.aggression) < 1e-5f &&
@@ -58,6 +61,7 @@ struct AiParams {
                std::abs(artilleryIdealRangeRatio - o.artilleryIdealRangeRatio) < 1e-5f &&
                std::abs(scoutingWeight - o.scoutingWeight) < 1e-5f &&
                std::abs(focusFireWeight - o.focusFireWeight) < 1e-5f &&
+               std::abs(threatRadiusTiles - o.threatRadiusTiles) < 1e-5f &&
                targetMemoryTicks == o.targetMemoryTicks &&
                enableCommanderRetreat == o.enableCommanderRetreat &&
                enableUnitRetreat == o.enableUnitRetreat &&
@@ -101,6 +105,7 @@ inline void clampParams(AiParams& p) {
     sanitizeFloat(p.artilleryIdealRangeRatio, 0.80f, 0.50f, 0.95f);
     sanitizeFloat(p.scoutingWeight, 1.0f, 0.10f, 3.00f);
     sanitizeFloat(p.focusFireWeight, 1.2f, 0.20f, 3.00f);
+    sanitizeFloat(p.threatRadiusTiles, 16.0f, 6.0f, 32.0f);
     p.targetMemoryTicks = std::clamp(p.targetMemoryTicks, 20u, 400u);
     p.scoutingGroupCount = std::clamp(p.scoutingGroupCount, 1, 6);
 }

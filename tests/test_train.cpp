@@ -26,6 +26,7 @@ bool isParamsValid(const AiParams& p) {
     if (std::isnan(p.artilleryIdealRangeRatio) || std::isinf(p.artilleryIdealRangeRatio)) return false;
     if (std::isnan(p.scoutingWeight) || std::isinf(p.scoutingWeight)) return false;
     if (std::isnan(p.focusFireWeight) || std::isinf(p.focusFireWeight)) return false;
+    if (std::isnan(p.threatRadiusTiles) || std::isinf(p.threatRadiusTiles)) return false;
 
     if (p.decisionIntervalTicks < 8 || p.decisionIntervalTicks > 40) return false;
     if (p.aggression < 0.15f || p.aggression > 1.50f) return false;
@@ -35,6 +36,7 @@ bool isParamsValid(const AiParams& p) {
     if (p.artilleryIdealRangeRatio < 0.50f || p.artilleryIdealRangeRatio > 0.95f) return false;
     if (p.scoutingWeight < 0.10f || p.scoutingWeight > 3.00f) return false;
     if (p.focusFireWeight < 0.20f || p.focusFireWeight > 3.00f) return false;
+    if (p.threatRadiusTiles < 6.0f || p.threatRadiusTiles > 32.0f) return false;
     if (p.targetMemoryTicks < 20 || p.targetMemoryTicks > 400) return false;
     if (p.scoutingGroupCount < 1 || p.scoutingGroupCount > 6) return false;
 
@@ -73,6 +75,7 @@ void testParamsBoundsAndJsonRoundTrip() {
             p.artilleryIdealRangeRatio = static_cast<float>(rng.range(-50, 150)) / 100.0f;
             p.scoutingWeight = static_cast<float>(rng.range(-50, 500)) / 100.0f;
             p.focusFireWeight = static_cast<float>(rng.range(-50, 500)) / 100.0f;
+            p.threatRadiusTiles = static_cast<float>(rng.range(-10, 60));
             p.targetMemoryTicks = static_cast<uint32_t>(rng.range(0, 1000));
             p.scoutingGroupCount = rng.range(-5, 15);
         }
