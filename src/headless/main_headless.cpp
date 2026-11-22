@@ -41,6 +41,7 @@ struct HeadlessOptions {
     float       ai1AggOverride{-1.0f};
     float       ai2AggOverride{-1.0f};
     int         printEvery{20};
+    int         traceEvery{0};
     bool        liveOutput{true};
     bool        scrollOutput{false};
     bool        quietOutput{false};
@@ -63,6 +64,7 @@ void printHelp(const char* progName) {
               << "  --ai1-agg <val>        Ghi de nhanh do hung hang (aggression 0.0..1.0) AI 1\n"
               << "  --ai2-agg <val>        Ghi de nhanh do hung hang (aggression 0.0..1.0) AI 2\n"
               << "  --print-every <ticks>  Chu ky in 2 dong suy nghi AI len CMD (Mac dinh: 20; 0: tat)\n"
+              << "  --trace-every <ticks>  Chu ky in chi tiet trang thai don vi va pathfinder len CMD (0: tat)\n"
               << "  --live                 Che do cap nhat tai cho 2 dong CMD qua ANSI (Mac dinh khi 1 tran)\n"
               << "  --scroll               Che do in cuon tung cap 2 dong kem duong ngan cach\n"
               << "  --quiet                Che do tat in live, chi in tien do de dat toc do toi da\n"
@@ -103,6 +105,78 @@ std::string matchResultToWinnerString(sim::MatchResult res) {
     }
 }
 
+void printUnitTrace(const sim::WorldSim& sim, const ai::TacticalAI& ai1, const ai::TacticalAI& ai2, uint64_t tick) {
+    std::cout << "\n========================================================================================================================================\n"
+              << "[TRACE TICK " << tick << " (" << (tick / 20) << "s)] Living Units: " << sim.getUnits().size() << "\n"
+              << "AI1 (Blue) Memory: " << ai1.getMemory().size() << " enemies | AI2 (Red) Memory: " << ai2.getMemory().size() << " enemies\n"
+              << "----------------------------------------------------------------------------------------------------------------------------------------\n"
+              << std::left << std::setw(4)  << "ID"
+              << std::setw(10) << "Faction"
+              << std::setw(12) << "Type"
+              << std::setw(11) << "Troops"
+              << std::setw(13) << "HP(%)"
+              << std::setw(10) << "Pos(X,Y)"
+              << std::setw(9)  << "HasDest"
+              << std::setw(20) << "Dest->Final"
+              << std::setw(10) << "NextStep"
+              << std::setw(16) << "Pathfinder"
+              << "AI Intent" << "\n"
+              << "----------------------------------------------------------------------------------------------------------------------------------------\n";
+
+    for (const auto& u : sim.getUnits()) {
+        if (u.isDead()) continue;
+        std::string factionStr = (u.getFaction() == sim::Faction::Player) ? "AI1_Blue" : "AI2_Red";
+        std::string typeStr = u.getName();
+        std::string troopsStr = std::to_string(u.getCurrentUnits()) + "/" + std::to_string(u.getMaxUnits());
+        int hpPct = static_cast<int>(std::round(static_cast<float>(u.getHp()) * 100.0f / static_cast<float>(std::max(1, u.getMaxHp()))));
+        std::string hpStr = std::to_string(u.getHp()) + " (" + std::to_string(hpPct) + "%)";
+        std::string posStr = "(" + std::to_string(u.getTileX()) + "," + std::to_string(u.getTileY()) + ")[" + std::to_string(u.getPosX()) + "," + std::to_string(u.getPosY()) + "]";
+        std::string hasDestStr = u.hasDestination() ? "TRUE" : "FALSE";
+
+        std::string destStr = "None";
+        if (u.hasDestination()) {
+            destStr = "(" + std::to_string(u.getDestX() / 1000) + "," + std::to_string(u.getDestY() / 1000) + ")[" + std::to_string(u.getDestX()) + "," + std::to_string(u.getDestY()) + "]";
+            if (u.hasPath()) {
+                destStr += "->(" + std::to_string(u.getFinalTargetTile().x) + "," + std::to_string(u.getFinalTargetTile().y) + ")";
+            }
+        }
+
+        std::string nextStepStr = "None";
+        if (u.hasPath() && u.getCurrentWaypointIndex() < u.getWaypoints().size()) {
+            const auto& wp = u.getWaypoints()[u.getCurrentWaypointIndex()];
+            nextStepStr = "(" + std::to_string(wp.x) + "," + std::to_string(wp.y) + ")";
+        }
+
+        sim::DetailedTerrainType dt = sim.getDetailedTerrain(u.getTileX(), u.getTileY());
+        int spdPct = sim.getConfig().getSpeedMultiplierPercent(dt, u.getDomain(), u.getType());
+
+        std::string pathfinderStr = "N/A";
+        if (u.wasPathfinderCalled()) {
+            if (u.getLastPathfinderSuccess()) {
+                pathfinderStr = "OK(len=" + std::to_string(u.getLastPathLength()) + ")";
+            } else {
+                pathfinderStr = "FAIL";
+            }
+        }
+        pathfinderStr += "[dt=" + std::to_string(static_cast<int>(dt)) + ",spd=" + std::to_string(spdPct) + ",acc=" + std::to_string(u.getMoveAccumulator()) + "]";
+
+        std::string intent = (u.getFaction() == sim::Faction::Player) ? ai1.getUnitIntent(u.getId()) : ai2.getUnitIntent(u.getId());
+
+        std::cout << std::left << std::setw(4)  << u.getId()
+                  << std::setw(10) << factionStr
+                  << std::setw(12) << typeStr
+                  << std::setw(11) << troopsStr
+                  << std::setw(13) << hpStr
+                  << std::setw(10) << posStr
+                  << std::setw(9)  << hasDestStr
+                  << std::setw(20) << destStr
+                  << std::setw(10) << nextStepStr
+                  << std::setw(16) << pathfinderStr
+                  << intent << "\n";
+    }
+    std::cout << "========================================================================================================================================\n\n" << std::flush;
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -130,6 +204,8 @@ int main(int argc, char* argv[]) {
             opt.ai2AggOverride = std::stof(argv[++i]);
         } else if (arg == "--print-every" && i + 1 < argc) {
             opt.printEvery = std::max(0, std::stoi(argv[++i]));
+        } else if (arg == "--trace-every" && i + 1 < argc) {
+            opt.traceEvery = std::max(0, std::stoi(argv[++i]));
         } else if (arg == "--live") {
             opt.liveOutput = true;
             opt.scrollOutput = false;
@@ -157,7 +233,10 @@ int main(int argc, char* argv[]) {
     // Tự động điều chỉnh chế độ hiển thị nếu không chỉ định rõ
     bool isTty = (isatty(fileno(stdout)) != 0);
     if (!explicitDisplayMode) {
-        if (!isTty) {
+        if (opt.traceEvery > 0) {
+            opt.scrollOutput = true;
+            opt.liveOutput = false;
+        } else if (!isTty) {
             opt.scrollOutput = true;
             opt.liveOutput = false;
         } else if (opt.matches > 1) {
@@ -283,6 +362,11 @@ int main(int argc, char* argv[]) {
             }
 
             sim.tick();
+
+            uint64_t currentTick = sim.getCurrentTick();
+            if (opt.traceEvery > 0 && (currentTick % static_cast<uint64_t>(opt.traceEvery) == 0)) {
+                printUnitTrace(sim, ai1, ai2, currentTick);
+            }
         }
 
         // Lấy thông tin kết thúc

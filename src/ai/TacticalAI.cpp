@@ -23,6 +23,7 @@ void TacticalAI::reset(uint64_t newSeed) {
     m_lastSnapshot.faction = m_controlledFaction;
     m_lastSnapshot.params = m_params;
     m_totalCommandsIssued = 0;
+    m_unitIntents.clear();
 }
 
 void TacticalAI::update(sim::WorldSim& sim) {
@@ -398,6 +399,7 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
 
     // Nếu có địch áp sát trong bán kính nguy hiểm hoặc mất máu nặng -> Tháo chạy ngay lập tức!
     if (m_params.enableCommanderRetreat && (threatCount > 0 || isSeverelyDamaged)) {
+        m_unitIntents[commander.getId()] = "Retreating (Danger)";
         int threatCenterX = (threatCount > 0) ? (threatSumX / threatCount) : (comX + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5));
         int threatCenterY = (threatCount > 0) ? (threatSumY / threatCount) : comY;
 
@@ -426,6 +428,7 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
         int dyHome = homeBaseY - comY;
         float maxAllowedDist = m_params.commanderSafeRadiusTiles;
         if (static_cast<float>(dxHome * dxHome + dyHome * dyHome) > maxAllowedDist * maxAllowedDist) {
+            m_unitIntents[commander.getId()] = "Retreating (Reposition)";
             sim::TileCoord retreatTarget = findSafeRetreatTile(sim, comX, comY, comX + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5), comY, sim::UnitDomain::Land, sim::UnitType::Commander, 3, 6);
             if (retreatTarget.x != comX || retreatTarget.y != comY) {
                 sim::Command cmd;
@@ -435,7 +438,11 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
                 cmd.move.targetTileY = retreatTarget.y;
                 outCommands.push_back(cmd);
             }
+        } else {
+            m_unitIntents[commander.getId()] = "Standing (At Base)";
         }
+    } else {
+        m_unitIntents[commander.getId()] = "Standing (Safe)";
     }
 }
 
@@ -486,6 +493,7 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             // Nếu địch áp sát quá gần: Lùi lại gấp (ngưỡng điều khiển bởi artilleryStandOffMargin)
             float retreatThreshold = std::max(2.0f, range * m_params.artilleryIdealRangeRatio - m_params.artilleryStandOffMargin);
             if (dist < retreatThreshold) {
+                m_unitIntents[caesar->getId()] = "Retreating (StandOff Margin)";
                 sim::TileCoord retreatTile = findSafeRetreatTile(
                     sim, cx, cy, bestTarget->lastTileX, bestTarget->lastTileY,
                     sim::UnitDomain::Land, sim::UnitType::Caesar, 3, 6
@@ -501,6 +509,7 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             }
             // Nếu ngoài tầm bắn: Tiến đến ô stand-off lý tưởng (khoảng 80% range)
             else if (dist > range) {
+                m_unitIntents[caesar->getId()] = "Advancing (To Target)";
                 sim::TileCoord standOffTile = findArtilleryStandOffTile(
                     sim, *caesar, bestTarget->lastTileX, bestTarget->lastTileY,
                     range * m_params.artilleryIdealRangeRatio
@@ -518,8 +527,12 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
                     }
                 }
             }
+            else {
+                m_unitIntents[caesar->getId()] = "Attacking (In Range)";
+            }
             // Nếu đã nằm trong khoảng bắn [5.0f, range]: Giữ nguyên vị trí để tự động bắn!
         } else if (!caesar->hasPath() && !mainForce.empty()) {
+            m_unitIntents[caesar->getId()] = "Advancing (Follow Main Force)";
             // Chưa thấy địch: di chuyển theo sau cụm quân chủ lực (cách khoảng 6 ô)
             const auto* leader = mainForce[0];
             int lx = leader->getTileX();
@@ -531,6 +544,8 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             cmd.move.targetTileX = tgt.x;
             cmd.move.targetTileY = tgt.y;
             outCommands.push_back(cmd);
+        } else {
+            m_unitIntents[caesar->getId()] = "Standing (No Targets)";
         }
     }
 
@@ -552,6 +567,7 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
 
         // Ưu tiên số 1: Đánh chặn máy bay địch đã phát hiện
         if (airThreat) {
+            m_unitIntents[gepard->getId()] = "Attacking (Intercept Air)";
             sim::Command cmd;
             cmd.type = sim::CommandType::Move;
             cmd.move.unitIds = {gepard->getId()};
@@ -565,16 +581,21 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             int escortTargetY = gy;
 
             if (i == 0 && commander) {
+                m_unitIntents[gepard->getId()] = "Defending (Escort Cmdr)";
                 // Gepard 1 bảo vệ Tư lệnh
                 escortTargetX = commander->getTileX() + (m_controlledFaction == sim::Faction::Enemy ? -2 : 2);
                 escortTargetY = commander->getTileY();
             } else if (!caesars.empty()) {
+                m_unitIntents[gepard->getId()] = "Defending (Escort Caesar)";
                 // Gepard 2 bảo vệ Caesar
                 escortTargetX = caesars[0]->getTileX() + (m_controlledFaction == sim::Faction::Enemy ? -2 : 2);
                 escortTargetY = caesars[0]->getTileY();
             } else if (!mainForce.empty()) {
+                m_unitIntents[gepard->getId()] = "Defending (Escort Main Force)";
                 escortTargetX = mainForce[0]->getTileX();
                 escortTargetY = mainForce[0]->getTileY();
+            } else {
+                m_unitIntents[gepard->getId()] = "Standing";
             }
 
             escortTargetX = std::clamp(escortTargetX, 2, sim.getMap().getWidth() - 3);
@@ -611,6 +632,7 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
         if (!su || su->isDead()) continue;
 
         if (enemyAir) {
+            m_unitIntents[su->getId()] = "Attacking (Air Intercept)";
             // Săn máy bay địch
             if (su->hasPath() && su->getFinalTargetTile().x == enemyAir->lastTileX && su->getFinalTargetTile().y == enemyAir->lastTileY) {
                 // Đang bay bám đuổi máy bay địch
@@ -623,6 +645,7 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
                 outCommands.push_back(cmd);
             }
         } else if (!m_memory.empty()) {
+            m_unitIntents[su->getId()] = "Attacking (Ground Support)";
             // Đánh hỗ trợ mục tiêu mặt đất
             const auto& enemyGround = m_memory[i % m_memory.size()];
             if (su->hasPath() && su->getFinalTargetTile().x == enemyGround.lastTileX && su->getFinalTargetTile().y == enemyGround.lastTileY) {
@@ -635,15 +658,18 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
                 cmd.move.targetTileY = enemyGround.lastTileY;
                 outCommands.push_back(cmd);
             }
-        } else if (!su->hasPath()) {
-            // Tuần tra trinh sát sâu sang nửa bản đồ đối phương
-            sim::TileCoord scoutTarget = pickScoutingTarget(sim, static_cast<int>(i), static_cast<int>(su57s.size()), sim::UnitDomain::Air, sim::UnitType::Su57);
-            sim::Command cmd;
-            cmd.type = sim::CommandType::Move;
-            cmd.move.unitIds = {su->getId()};
-            cmd.move.targetTileX = scoutTarget.x;
-            cmd.move.targetTileY = scoutTarget.y;
-            outCommands.push_back(cmd);
+        } else {
+            m_unitIntents[su->getId()] = "Scouting (Air Recon)";
+            if (!su->hasPath()) {
+                // Tuần tra trinh sát sâu sang nửa bản đồ đối phương
+                sim::TileCoord scoutTarget = pickScoutingTarget(sim, static_cast<int>(i), static_cast<int>(su57s.size()), sim::UnitDomain::Air, sim::UnitType::Su57);
+                sim::Command cmd;
+                cmd.type = sim::CommandType::Move;
+                cmd.move.unitIds = {su->getId()};
+                cmd.move.targetTileX = scoutTarget.x;
+                cmd.move.targetTileY = scoutTarget.y;
+                outCommands.push_back(cmd);
+            }
         }
     }
 
@@ -662,6 +688,7 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
         if (!b2 || b2->isDead()) continue;
 
         if (highValueTarget) {
+            m_unitIntents[b2->getId()] = "Attacking (Bombing)";
             int targetX = highValueTarget->lastTileX;
             int targetY = highValueTarget->lastTileY;
 
@@ -685,15 +712,18 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
                 cmd.move.targetTileY = targetY;
                 outCommands.push_back(cmd);
             }
-        } else if (!b2->hasPath()) {
-            // Tuần tra trinh sát các điểm chiến lược
-            sim::TileCoord scoutTarget = pickScoutingTarget(sim, 1, 2, sim::UnitDomain::Air, sim::UnitType::B2Spirit);
-            sim::Command cmd;
-            cmd.type = sim::CommandType::Move;
-            cmd.move.unitIds = {b2->getId()};
-            cmd.move.targetTileX = scoutTarget.x;
-            cmd.move.targetTileY = scoutTarget.y;
-            outCommands.push_back(cmd);
+        } else {
+            m_unitIntents[b2->getId()] = "Scouting (Stealth Recon)";
+            if (!b2->hasPath()) {
+                // Tuần tra trinh sát các điểm chiến lược
+                sim::TileCoord scoutTarget = pickScoutingTarget(sim, 1, 2, sim::UnitDomain::Air, sim::UnitType::B2Spirit);
+                sim::Command cmd;
+                cmd.type = sim::CommandType::Move;
+                cmd.move.unitIds = {b2->getId()};
+                cmd.move.targetTileX = scoutTarget.x;
+                cmd.move.targetTileY = scoutTarget.y;
+                outCommands.push_back(cmd);
+            }
         }
     }
 }
@@ -731,6 +761,7 @@ void TacticalAI::planNavy(const sim::WorldSim& sim,
         int sy = ship->getTileY();
 
         if (shipTarget) {
+            m_unitIntents[ship->getId()] = "Attacking (Enemy Ship)";
             // Tìm ô biển gần tàu địch nhất để tiếp chiến
             sim::TileCoord bestSeaTile{sx, sy};
             int bestDistSq = std::numeric_limits<int>::max();
@@ -767,6 +798,7 @@ void TacticalAI::planNavy(const sim::WorldSim& sim,
                 outCommands.push_back(cmd);
             }
         } else if (coastalTarget) {
+            m_unitIntents[ship->getId()] = "Attacking (Coastal Target)";
             // Tìm ô biển trong tầm bắn (range <= 10) tới mục tiêu lục quân ven bờ
             sim::TileCoord bestCoastalSeaTile{sx, sy};
             bool found = false;
@@ -799,34 +831,37 @@ void TacticalAI::planNavy(const sim::WorldSim& sim,
                 cmd.move.targetTileY = bestCoastalSeaTile.y;
                 outCommands.push_back(cmd);
             }
-        } else if (!ship->hasPath()) {
-            // Tuần tra ven biển mở sương mù
-            // Đi dọc theo bờ biển (xem các ô COASTAL_SEA phía địch)
-            int patrolX = (m_controlledFaction == sim::Faction::Enemy) ? (mapW / 2 - 10) : (mapW / 2 + 10);
-            int patrolY = (i % 2 == 0) ? (mapH / 4) : (3 * mapH / 4);
+        } else {
+            m_unitIntents[ship->getId()] = "Scouting (Naval Patrol)";
+            if (!ship->hasPath()) {
+                // Tuần tra ven biển mở sương mù
+                // Đi dọc theo bờ biển (xem các ô COASTAL_SEA phía địch)
+                int patrolX = (m_controlledFaction == sim::Faction::Enemy) ? (mapW / 2 - 10) : (mapW / 2 + 10);
+                int patrolY = (i % 2 == 0) ? (mapH / 4) : (3 * mapH / 4);
 
-            for (int radius = 0; radius < 25; ++radius) {
-                bool found = false;
-                for (int dy = -radius; dy <= radius; ++dy) {
-                    for (int dx = -radius; dx <= radius; ++dx) {
-                        int nx = patrolX + dx;
-                        int ny = patrolY + dy;
-                        if (!map.isInBounds(nx, ny)) continue;
-                        sim::DetailedTerrainType dt = sim.getConfig().classifyTerrain(map, nx, ny);
-                        if (sim.getConfig().isPassable(dt, sim::UnitDomain::Sea, ship->getType())) {
-                            sim::Command cmd;
-                            cmd.type = sim::CommandType::Move;
-                            cmd.move.unitIds = {ship->getId()};
-                            cmd.move.targetTileX = nx;
-                            cmd.move.targetTileY = ny;
-                            outCommands.push_back(cmd);
-                            found = true;
-                            break;
+                for (int radius = 0; radius < 25; ++radius) {
+                    bool found = false;
+                    for (int dy = -radius; dy <= radius; ++dy) {
+                        for (int dx = -radius; dx <= radius; ++dx) {
+                            int nx = patrolX + dx;
+                            int ny = patrolY + dy;
+                            if (!map.isInBounds(nx, ny)) continue;
+                            sim::DetailedTerrainType dt = sim.getConfig().classifyTerrain(map, nx, ny);
+                            if (sim.getConfig().isPassable(dt, sim::UnitDomain::Sea, ship->getType())) {
+                                sim::Command cmd;
+                                cmd.type = sim::CommandType::Move;
+                                cmd.move.unitIds = {ship->getId()};
+                                cmd.move.targetTileX = nx;
+                                cmd.move.targetTileY = ny;
+                                outCommands.push_back(cmd);
+                                found = true;
+                                break;
+                            }
                         }
+                        if (found) break;
                     }
                     if (found) break;
                 }
-                if (found) break;
             }
         }
     }
@@ -853,6 +888,7 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
             int threatDirX = (m_controlledFaction == sim::Faction::Enemy) ? -5 : 5;
             sim::TileCoord retreatTile = findSafeRetreatTile(sim, ux, uy, ux + threatDirX, uy, u->getDomain(), u->getType(), 3, 6);
             if (retreatTile.x != ux || retreatTile.y != uy) {
+                m_unitIntents[u->getId()] = "Retreating (Low HP)";
                 sim::Command cmd;
                 cmd.type = sim::CommandType::Move;
                 cmd.move.unitIds = {u->getId()};
@@ -860,6 +896,8 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                 cmd.move.targetTileY = retreatTile.y;
                 outCommands.push_back(cmd);
                 continue;
+            } else {
+                m_unitIntents[u->getId()] = "Retreating (Edge/Trapped)";
             }
         }
         readyUnits.push_back(u);
@@ -936,6 +974,7 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
             }
 
             if (bestEnemy) {
+                m_unitIntents[u->getId()] = "Attacking (Target " + std::to_string(bestEnemy->unitId) + ")";
                 targetCounts[bestEnemy->unitId]++;
                 int targetX = bestEnemy->lastTileX;
                 int targetY = bestEnemy->lastTileY;
@@ -976,6 +1015,8 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                 cmd.move.targetTileX = targetX;
                 cmd.move.targetTileY = targetY;
                 outCommands.push_back(cmd);
+            } else {
+                m_unitIntents[u->getId()] = "Holding (No Valid Target)";
             }
         }
     }
@@ -988,6 +1029,7 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
 
         for (const auto* u : readyUnits) {
             if (u->getType() == sim::UnitType::Puma && scoutCount < maxScouts) {
+                m_unitIntents[u->getId()] = "Scouting (Puma Recon)";
                 if (!u->hasPath()) {
                     sim::TileCoord scoutTarget = pickScoutingTarget(
                         sim, scoutCount++, maxScouts,
@@ -1022,11 +1064,13 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
 
         int combatIndex = 0;
         for (const auto* u : combatUnits) {
+            bool isAttacking = (combatIndex < maxAttackers);
+            combatIndex++;
+            m_unitIntents[u->getId()] = isAttacking ? "Advancing (Offensive)" : "Holding (Rear Guard)";
+
             if (u->hasPath()) continue;
 
             int sector = (combatIndex % 3); // 0: Bắc, 1: Trung tâm, 2: Nam
-            bool isAttacking = (combatIndex < maxAttackers);
-            combatIndex++;
 
             int destX = isAttacking ? offensiveDestX : rearX;
             int destY = (sector == 0) ? (map.getHeight() / 4)

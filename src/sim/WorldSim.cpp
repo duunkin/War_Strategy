@@ -436,6 +436,7 @@ void WorldSim::tick() {
 
                     if (unit->getTileX() == assignedTarget.x && unit->getTileY() == assignedTarget.y) {
                         unit->clearPath();
+                        unit->setLastPathfinderResult(true, true, 0);
                         continue;
                     }
 
@@ -447,6 +448,8 @@ void WorldSim::tick() {
                     PathResult path = Pathfinder::findPath(
                         m_map, m_config, unit->getDomain(), unit->getType(), startCoord, assignedTarget
                     );
+
+                    unit->setLastPathfinderResult(true, path.found, static_cast<int>(path.waypoints.size()));
 
                     if (path.found) {
                         unit->setPath(path);

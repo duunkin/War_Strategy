@@ -61,6 +61,11 @@ public:
     [[nodiscard]] const std::vector<EnemyMemoryRecord>& getMemory() const { return m_memory; }
     [[nodiscard]] const AiThoughtSnapshot& getSnapshot() const { return m_lastSnapshot; }
     [[nodiscard]] uint32_t getTotalCommandsIssued() const { return m_totalCommandsIssued; }
+    [[nodiscard]] std::string getUnitIntent(uint32_t unitId) const {
+        auto it = m_unitIntents.find(unitId);
+        if (it != m_unitIntents.end()) return it->second;
+        return "Idle/Standing";
+    }
 
 private:
     // Cập nhật bộ nhớ tình báo từ các đơn vị địch nhìn thấy được
@@ -119,6 +124,7 @@ private:
     std::vector<EnemyMemoryRecord> m_memory;
     AiThoughtSnapshot              m_lastSnapshot;
     uint32_t                       m_totalCommandsIssued{0};
+    std::unordered_map<uint32_t, std::string> m_unitIntents;
 };
 
 } // namespace ai

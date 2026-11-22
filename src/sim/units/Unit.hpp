@@ -105,6 +105,16 @@ public:
     [[nodiscard]] bool isDestinationAdjusted() const { return m_destinationAdjusted; }
     [[nodiscard]] TileCoord getFinalTargetTile() const { return m_finalTargetTile; }
 
+    // Pathfinder telemetry (M9.7)
+    void setLastPathfinderResult(bool called, bool success, int length) {
+        m_lastPathfinderCalled = called;
+        m_lastPathfinderSuccess = success;
+        m_lastPathLength = length;
+    }
+    [[nodiscard]] bool wasPathfinderCalled() const { return m_lastPathfinderCalled; }
+    [[nodiscard]] bool getLastPathfinderSuccess() const { return m_lastPathfinderSuccess; }
+    [[nodiscard]] int getLastPathLength() const { return m_lastPathLength; }
+
     // Di chuyển thẳng về phía đích một đoạn stepMilli (thuần số nguyên)
     void stepTowardsDestination(int stepMilli);
 
@@ -161,6 +171,11 @@ private:
     size_t                 m_currentWaypointIdx{0};
     bool                   m_destinationAdjusted{false};
     TileCoord              m_finalTargetTile{0, 0};
+
+    // Pathfinder telemetry (M9.7)
+    bool                   m_lastPathfinderCalled{false};
+    bool                   m_lastPathfinderSuccess{false};
+    int                    m_lastPathLength{0};
 };
 
 } // namespace sim
