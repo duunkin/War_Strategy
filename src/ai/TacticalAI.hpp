@@ -14,6 +14,17 @@
 namespace ai {
 
 /**
+ * @brief Cờ thử nghiệm bóc tách (Ablation Flags - M9.8) để bật/tắt riêng rẽ từng cải tiến của M9.7
+ */
+struct TacticalAblationFlags {
+    bool enableSafeRetreatExit{true};       // 1. Cho phép đơn vị bị thương an toàn (>16 ô) thoát rút lui
+    bool enableReconInheritance{true};      // 2. Phân công bộ binh/IFV làm trinh sát khi hết Puma
+    bool enableDeepPush{true};              // 3. Tiến sâu vào căn cứ địch khi tới tuyến tập kết
+    bool enableTargetFiltering{true};       // 4. Lọc bỏ mục tiêu không thể tấn công (ví dụ bộ binh nhắm tàu)
+    bool enableCommanderStabilization{true};// 5. Không cho Tư lệnh tháo chạy hoảng loạn khi không có địch
+};
+
+/**
  * @brief Bản ghi thông tin mục tiêu địch từng được phát hiện trong tầm nhìn (Fog of War Memory)
  */
 struct EnemyMemoryRecord {
@@ -67,7 +78,16 @@ public:
         return "Idle/Standing";
     }
 
+    // Quản lý cờ bóc tách thử nghiệm (M9.8 Ablation)
+    void setAblationFlags(const TacticalAblationFlags& flags) { m_ablationFlags = flags; }
+    [[nodiscard]] const TacticalAblationFlags& getAblationFlags() const { return m_ablationFlags; }
+    static void setGlobalAblationFlags(const TacticalAblationFlags& flags) { s_globalAblationFlags = flags; }
+    static TacticalAblationFlags getGlobalAblationFlags() { return s_globalAblationFlags; }
+
 private:
+    TacticalAblationFlags m_ablationFlags{s_globalAblationFlags};
+    static inline TacticalAblationFlags s_globalAblationFlags{};
+
     // Cập nhật bộ nhớ tình báo từ các đơn vị địch nhìn thấy được
     void updateEnemyMemory(const sim::WorldSim& sim);
 

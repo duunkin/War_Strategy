@@ -398,7 +398,14 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
     bool isSeverelyDamaged = (commander.getHp() < commander.getMaxHp() / 2);
 
     // Nếu có địch áp sát trong bán kính nguy hiểm hoặc mất máu nặng và có địch trên chiến trường -> Tháo chạy ngay lập tức!
-    if (m_params.enableCommanderRetreat && (threatCount > 0 || (isSeverelyDamaged && !m_memory.empty()))) {
+    bool shouldRetreat = false;
+    if (m_ablationFlags.enableCommanderStabilization) {
+        shouldRetreat = (threatCount > 0 || (isSeverelyDamaged && !m_memory.empty()));
+    } else {
+        shouldRetreat = (threatCount > 0 || isSeverelyDamaged);
+    }
+
+    if (m_params.enableCommanderRetreat && shouldRetreat) {
         m_unitIntents[commander.getId()] = "Retreating (Danger)";
         int threatCenterX = (threatCount > 0) ? (threatSumX / threatCount) : (comX + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5));
         int threatCenterY = (threatCount > 0) ? (threatSumY / threatCount) : comY;
@@ -663,7 +670,7 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
             if (!su->hasPath()) {
                 // Tuần tra trinh sát sâu sang nửa bản đồ đối phương
                 sim::TileCoord scoutTarget = pickScoutingTarget(sim, static_cast<int>(i), static_cast<int>(su57s.size()), sim::UnitDomain::Air, sim::UnitType::Su57);
-                if (std::abs(su->getTileX() - scoutTarget.x) <= 4 && std::abs(su->getTileY() - scoutTarget.y) <= 4) {
+                if (m_ablationFlags.enableDeepPush && std::abs(su->getTileX() - scoutTarget.x) <= 4 && std::abs(su->getTileY() - scoutTarget.y) <= 4) {
                     int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (sim.getMap().getWidth() - 9);
                     int enemyBaseY = (i % 2 == 0) ? (sim.getMap().getHeight() / 3) : (2 * sim.getMap().getHeight() / 3);
                     scoutTarget = {enemyBaseX, enemyBaseY};
@@ -725,7 +732,7 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
             if (!b2->hasPath()) {
                 // Tuần tra trinh sát các điểm chiến lược
                 sim::TileCoord scoutTarget = pickScoutingTarget(sim, 1, 2, sim::UnitDomain::Air, sim::UnitType::B2Spirit);
-                if (std::abs(b2->getTileX() - scoutTarget.x) <= 4 && std::abs(b2->getTileY() - scoutTarget.y) <= 4) {
+                if (m_ablationFlags.enableDeepPush && std::abs(b2->getTileX() - scoutTarget.x) <= 4 && std::abs(b2->getTileY() - scoutTarget.y) <= 4) {
                     int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (sim.getMap().getWidth() - 9);
                     int enemyBaseY = sim.getMap().getHeight() / 2;
                     scoutTarget = {enemyBaseX, enemyBaseY};
@@ -915,12 +922,17 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
         // Đơn vị chỉ thực sự rút lui khi:
         // - Được bật cơ chế rút lui (enableUnitRetreat)
         // - Máu dưới ngưỡng quy định (hpRatio < retreatHpRatio)
-        // - VÀ có hiểm họa địch áp sát gần (trong bán kính 16 ô)
-        bool hasImmediateThreat = (nearestThreat != nullptr && minThreatDistSq <= 16.0f * 16.0f);
+        // - VÀ có hiểm họa địch áp sát gần (trong bán kính 16 ô nếu enableSafeRetreatExit)
+        bool hasImmediateThreat = false;
+        if (m_ablationFlags.enableSafeRetreatExit) {
+            hasImmediateThreat = (nearestThreat != nullptr && minThreatDistSq <= 16.0f * 16.0f);
+        } else {
+            hasImmediateThreat = true; // Cũ: Luôn rút lui vô điều kiện nếu máu thấp
+        }
 
         if (m_params.enableUnitRetreat && hpRatio < m_params.retreatHpRatio && hasImmediateThreat) {
-            int threatX = nearestThreat->lastTileX;
-            int threatY = nearestThreat->lastTileY;
+            int threatX = nearestThreat ? nearestThreat->lastTileX : (ux + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5));
+            int threatY = nearestThreat ? nearestThreat->lastTileY : uy;
             sim::TileCoord retreatTile = findSafeRetreatTile(sim, ux, uy, threatX, threatY, u->getDomain(), u->getType(), 3, 6);
             if (retreatTile.x != ux || retreatTile.y != uy) {
                 m_unitIntents[u->getId()] = "Retreating (Threat Nearby)";
@@ -937,7 +949,12 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
         } else if (hpRatio < m_params.retreatHpRatio) {
             m_unitIntents[u->getId()] = "Regrouped (Safe Distance)";
         }
-        readyUnits.push_back(u);
+
+        // Nếu bật enableSafeRetreatExit: đơn vị an toàn quay lại readyUnits.
+        // Nếu tắt (cũ): mọi đơn vị có hpRatio < retreatHpRatio bị loại khỏi readyUnits.
+        if (m_ablationFlags.enableSafeRetreatExit || hpRatio >= m_params.retreatHpRatio) {
+            readyUnits.push_back(u);
+        }
     }
 
     if (readyUnits.empty()) return;
@@ -954,12 +971,14 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
         float bestScore = -1.0f;
 
         for (const auto& enemy : m_memory) {
-            // Kiểm tra vũ khí của đơn vị có thể bắn mục tiêu này không
-            bool canHit = false;
-            if (enemy.domain == sim::UnitDomain::Land && u->canTargetGround()) canHit = true;
-            if (enemy.domain == sim::UnitDomain::Air && u->canTargetAir()) canHit = true;
-            if (enemy.domain == sim::UnitDomain::Sea && u->canTargetSea()) canHit = true;
-            if (!canHit) continue; // Bỏ qua mục tiêu không thể tấn công
+            // Kiểm tra vũ khí của đơn vị có thể bắn mục tiêu này không (nếu enableTargetFiltering)
+            if (m_ablationFlags.enableTargetFiltering) {
+                bool canHit = false;
+                if (enemy.domain == sim::UnitDomain::Land && u->canTargetGround()) canHit = true;
+                if (enemy.domain == sim::UnitDomain::Air && u->canTargetAir()) canHit = true;
+                if (enemy.domain == sim::UnitDomain::Sea && u->canTargetSea()) canHit = true;
+                if (!canHit) continue; // Bỏ qua mục tiêu không thể tấn công
+            }
 
             int dx = enemy.lastTileX - ux;
             int dy = enemy.lastTileY - uy;
@@ -1074,8 +1093,8 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                         sim, scoutCount, maxScouts,
                         u->getDomain(), u->getType()
                     );
-                    // Nếu đã tới gần điểm trinh sát ban đầu: đẩy sâu về phía căn cứ đối phương
-                    if (std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
+                    // Nếu đã tới gần điểm trinh sát ban đầu: đẩy sâu về phía căn cứ đối phương (nếu enableDeepPush)
+                    if (m_ablationFlags.enableDeepPush && std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
                         int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (map.getWidth() - 9);
                         int enemyBaseY = (scoutCount % 2 == 0) ? (map.getHeight() / 3) : (2 * map.getHeight() / 3);
                         scoutTarget = findPassableTileNear(sim, enemyBaseX, enemyBaseY, u->getDomain(), u->getType(), 15);
@@ -1096,8 +1115,8 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
             }
         }
 
-        // Ưu tiên 2: Nếu thiếu Puma (hoặc Puma đã chết), chỉ định bổ sung trinh sát từ combatUnits
-        if (scoutCount < maxScouts && !combatUnits.empty()) {
+        // Ưu tiên 2: Nếu thiếu Puma (hoặc Puma đã chết), chỉ định bổ sung trinh sát từ combatUnits (nếu enableReconInheritance)
+        if (m_ablationFlags.enableReconInheritance && scoutCount < maxScouts && !combatUnits.empty()) {
             std::vector<const sim::Unit*> nonScouts;
             for (const auto* u : combatUnits) {
                 if (scoutCount < maxScouts) {
@@ -1107,7 +1126,7 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                             sim, scoutCount, maxScouts,
                             u->getDomain(), u->getType()
                         );
-                        if (std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
+                        if (m_ablationFlags.enableDeepPush && std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
                             int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (map.getWidth() - 9);
                             int enemyBaseY = (scoutCount % 2 == 0) ? (map.getHeight() / 3) : (2 * map.getHeight() / 3);
                             scoutTarget = findPassableTileNear(sim, enemyBaseX, enemyBaseY, u->getDomain(), u->getType(), 15);
@@ -1168,8 +1187,8 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                                       : (3 * map.getHeight() / 4);
 
             // NẾU đơn vị tấn công đã đến tuyến tập kết offensiveDestX mà vẫn không thấy địch:
-            // Đẩy sâu hơn về phía căn cứ đối phương để tìm diệt!
-            if (isAttacking && std::abs(u->getTileX() - offensiveDestX) <= 4) {
+            // Đẩy sâu hơn về phía căn cứ đối phương để tìm diệt (nếu enableDeepPush)!
+            if (m_ablationFlags.enableDeepPush && isAttacking && std::abs(u->getTileX() - offensiveDestX) <= 4) {
                 destX = (m_controlledFaction == sim::Faction::Enemy) ? 10 : (map.getWidth() - 11);
                 m_unitIntents[u->getId()] = "Advancing (Push Enemy Base)";
             }

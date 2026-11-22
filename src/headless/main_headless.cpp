@@ -227,6 +227,34 @@ int main(int argc, char* argv[]) {
             opt.saveReplayFile = argv[++i];
         } else if (arg == "--replay-dir" && i + 1 < argc) {
             opt.replayDir = argv[++i];
+        } else if (arg == "--ablate-no-safe-retreat") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableSafeRetreatExit = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-recon-inherit") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableReconInheritance = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-deep-push") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableDeepPush = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-target-filter") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableTargetFiltering = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-cmd-stab") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableCommanderStabilization = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-all-off") {
+            ai::TacticalAblationFlags flags;
+            flags.enableSafeRetreatExit = false;
+            flags.enableReconInheritance = false;
+            flags.enableDeepPush = false;
+            flags.enableTargetFiltering = false;
+            flags.enableCommanderStabilization = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
         }
     }
 
