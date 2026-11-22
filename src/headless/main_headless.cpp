@@ -1,5 +1,7 @@
 #include "../sim/WorldSim.hpp"
 #include "../sim/map/WorldMap.hpp"
+#include "../mapgen/MapGenerator.hpp"
+#include "../mapgen/MapGenConfig.hpp"
 #include "../ai/TacticalAI.hpp"
 #include "../ai/AiParams.hpp"
 #include "../ai/AiTelemetry.hpp"
@@ -336,6 +338,10 @@ int main(int argc, char* argv[]) {
             std::cerr << "[Error] Khong the load config cho tran #" << matchIdx << "!\n";
             continue;
         }
+
+        mapgen::MapGenConfig mapCfg;
+        mapgen::MapGenerator mapGen;
+        mapGen.generate(map, currentSeed, mapCfg);
 
         sim.spawnDivisions(currentSeed);
 

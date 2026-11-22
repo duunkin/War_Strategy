@@ -116,7 +116,7 @@ private:
     // Tọa độ trung điểm neo xuất hiện quân 2 bên bờ biển
     int                  m_playerSpawnAnchorX{10};
     int                  m_playerSpawnAnchorY{48};
-    int                  m_enemySpawnAnchorX{118};
+    int                  m_enemySpawnAnchorX{117};
     int                  m_enemySpawnAnchorY{48};
 
     // Sương mù chiến tranh cho từng phe (M6)

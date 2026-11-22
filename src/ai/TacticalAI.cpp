@@ -428,15 +428,15 @@ void TacticalAI::planCommander(const sim::WorldSim& sim, const sim::Unit& comman
 
     // Nếu đang an toàn và được phép rút lui: nếu chưa có đường đi, có thể lùi nhẹ về cụm quân bảo vệ
     if (m_params.enableCommanderRetreat && !commander.hasPath() && !friendlyUnits.empty()) {
-        // Giữ vị trí an toàn ở phía sau đội hình
-        int homeBaseX = (m_controlledFaction == sim::Faction::Enemy) ? (sim.getMap().getWidth() - 12) : 12;
-        int homeBaseY = sim.getMap().getHeight() / 2;
+        // Giữ vị trí an toàn ở phía sau đội hình (điểm neo căn cứ)
+        int homeBaseX = (m_controlledFaction == sim::Faction::Enemy) ? sim.getEnemySpawnAnchorX() : sim.getPlayerSpawnAnchorX();
+        int homeBaseY = (m_controlledFaction == sim::Faction::Enemy) ? sim.getEnemySpawnAnchorY() : sim.getPlayerSpawnAnchorY();
         int dxHome = homeBaseX - comX;
         int dyHome = homeBaseY - comY;
         float maxAllowedDist = m_params.commanderSafeRadiusTiles;
         if (static_cast<float>(dxHome * dxHome + dyHome * dyHome) > maxAllowedDist * maxAllowedDist) {
             m_unitIntents[commander.getId()] = "Retreating (Reposition)";
-            sim::TileCoord retreatTarget = findSafeRetreatTile(sim, comX, comY, comX + (m_controlledFaction == sim::Faction::Enemy ? -5 : 5), comY, sim::UnitDomain::Land, sim::UnitType::Commander, 3, 6);
+            sim::TileCoord retreatTarget = findPassableTileNear(sim, homeBaseX, homeBaseY, sim::UnitDomain::Land, sim::UnitType::Commander, 6);
             if (retreatTarget.x != comX || retreatTarget.y != comY) {
                 sim::Command cmd;
                 cmd.type = sim::CommandType::Move;
@@ -544,13 +544,16 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             const auto* leader = mainForce[0];
             int lx = leader->getTileX();
             int ly = leader->getTileY();
-            sim::TileCoord tgt = findSafeRetreatTile(sim, cx, cy, lx, ly, sim::UnitDomain::Land, sim::UnitType::Caesar, 2, 4);
-            sim::Command cmd;
-            cmd.type = sim::CommandType::Move;
-            cmd.move.unitIds = {caesar->getId()};
-            cmd.move.targetTileX = tgt.x;
-            cmd.move.targetTileY = tgt.y;
-            outCommands.push_back(cmd);
+            int followX = (m_controlledFaction == sim::Faction::Enemy) ? (lx + 6) : (lx - 6);
+            sim::TileCoord tgt = findPassableTileNear(sim, followX, ly, sim::UnitDomain::Land, sim::UnitType::Caesar, 4);
+            if (tgt.x != cx || tgt.y != cy) {
+                sim::Command cmd;
+                cmd.type = sim::CommandType::Move;
+                cmd.move.unitIds = {caesar->getId()};
+                cmd.move.targetTileX = tgt.x;
+                cmd.move.targetTileY = tgt.y;
+                outCommands.push_back(cmd);
+            }
         } else {
             m_unitIntents[caesar->getId()] = "Standing (No Targets)";
         }
@@ -582,25 +585,28 @@ void TacticalAI::planArtilleryAndAntiAir(const sim::WorldSim& sim,
             cmd.move.targetTileY = airThreat->lastTileY;
             outCommands.push_back(cmd);
         }
-        // Ưu tiên số 2: Hộ tống Caesar hoặc Commander hoặc chủ lực
+        // Ưu tiên số 2: Hộ tống Caesar hoặc Chủ lực hoặc Commander
         else if (!gepard->hasPath()) {
             int escortTargetX = gx;
             int escortTargetY = gy;
 
-            if (i == 0 && commander) {
-                m_unitIntents[gepard->getId()] = "Defending (Escort Cmdr)";
-                // Gepard 1 bảo vệ Tư lệnh
-                escortTargetX = commander->getTileX() + (m_controlledFaction == sim::Faction::Enemy ? -2 : 2);
-                escortTargetY = commander->getTileY();
-            } else if (!caesars.empty()) {
+            if (!caesars.empty()) {
                 m_unitIntents[gepard->getId()] = "Defending (Escort Caesar)";
-                // Gepard 2 bảo vệ Caesar
-                escortTargetX = caesars[0]->getTileX() + (m_controlledFaction == sim::Faction::Enemy ? -2 : 2);
-                escortTargetY = caesars[0]->getTileY();
+                // Ưu tiên cao nhất: bảo vệ hỏa lực pháo Caesar
+                const auto* targetCaesar = caesars[i % caesars.size()];
+                escortTargetX = targetCaesar->getTileX() + (m_controlledFaction == sim::Faction::Enemy ? -2 : 2);
+                escortTargetY = targetCaesar->getTileY();
             } else if (!mainForce.empty()) {
                 m_unitIntents[gepard->getId()] = "Defending (Escort Main Force)";
-                escortTargetX = mainForce[0]->getTileX();
-                escortTargetY = mainForce[0]->getTileY();
+                // Ưu tiên 2: đi cùng khối thiết giáp / bộ binh chủ lực
+                const auto* leader = mainForce[std::min(i, mainForce.size() - 1)];
+                escortTargetX = leader->getTileX() + (m_controlledFaction == sim::Faction::Enemy ? 2 : -2);
+                escortTargetY = leader->getTileY();
+            } else if (commander) {
+                m_unitIntents[gepard->getId()] = "Defending (Escort Cmdr)";
+                // Ưu tiên cuối: nếu không còn pháo hay chủ lực, mới lùi về bảo vệ Tư lệnh
+                escortTargetX = commander->getTileX() + (m_controlledFaction == sim::Faction::Enemy ? -2 : 2);
+                escortTargetY = commander->getTileY();
             } else {
                 m_unitIntents[gepard->getId()] = "Standing";
             }
@@ -671,8 +677,9 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
                 // Tuần tra trinh sát sâu sang nửa bản đồ đối phương
                 sim::TileCoord scoutTarget = pickScoutingTarget(sim, static_cast<int>(i), static_cast<int>(su57s.size()), sim::UnitDomain::Air, sim::UnitType::Su57);
                 if (m_ablationFlags.enableDeepPush && std::abs(su->getTileX() - scoutTarget.x) <= 4 && std::abs(su->getTileY() - scoutTarget.y) <= 4) {
-                    int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (sim.getMap().getWidth() - 9);
-                    int enemyBaseY = (i % 2 == 0) ? (sim.getMap().getHeight() / 3) : (2 * sim.getMap().getHeight() / 3);
+                    int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorX() : sim.getEnemySpawnAnchorX();
+                    int enemyAnchorY = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorY() : sim.getEnemySpawnAnchorY();
+                    int enemyBaseY = (i % 2 == 0) ? std::max(4, enemyAnchorY - 12) : std::min(sim.getMap().getHeight() - 5, enemyAnchorY + 12);
                     scoutTarget = {enemyBaseX, enemyBaseY};
                     m_unitIntents[su->getId()] = "Scouting (Deep Air Recon)";
                 }
@@ -733,8 +740,8 @@ void TacticalAI::planAirForce(const sim::WorldSim& sim,
                 // Tuần tra trinh sát các điểm chiến lược
                 sim::TileCoord scoutTarget = pickScoutingTarget(sim, 1, 2, sim::UnitDomain::Air, sim::UnitType::B2Spirit);
                 if (m_ablationFlags.enableDeepPush && std::abs(b2->getTileX() - scoutTarget.x) <= 4 && std::abs(b2->getTileY() - scoutTarget.y) <= 4) {
-                    int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (sim.getMap().getWidth() - 9);
-                    int enemyBaseY = sim.getMap().getHeight() / 2;
+                    int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorX() : sim.getEnemySpawnAnchorX();
+                    int enemyBaseY = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorY() : sim.getEnemySpawnAnchorY();
                     scoutTarget = {enemyBaseX, enemyBaseY};
                 }
                 if (scoutTarget.x != b2->getTileX() || scoutTarget.y != b2->getTileY()) {
@@ -788,9 +795,11 @@ void TacticalAI::planNavy(const sim::WorldSim& sim,
             sim::TileCoord bestSeaTile{sx, sy};
             int bestDistSq = std::numeric_limits<int>::max();
 
+            int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
             for (int r = 1; r <= 8; ++r) {
                 for (int dy = -r; dy <= r; ++dy) {
-                    for (int dx = -r; dx <= r; ++dx) {
+                    for (int step = -r; step <= r; ++step) {
+                        int dx = step * xDirSign;
                         if (std::abs(dx) != r && std::abs(dy) != r) continue;
                         int nx = shipTarget->lastTileX + dx;
                         int ny = shipTarget->lastTileY + dy;
@@ -825,9 +834,11 @@ void TacticalAI::planNavy(const sim::WorldSim& sim,
             sim::TileCoord bestCoastalSeaTile{sx, sy};
             bool found = false;
 
+            int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
             for (int r = 2; r <= 10; ++r) {
                 for (int dy = -r; dy <= r; ++dy) {
-                    for (int dx = -r; dx <= r; ++dx) {
+                    for (int step = -r; step <= r; ++step) {
+                        int dx = step * xDirSign;
                         if (std::abs(dx) != r && std::abs(dy) != r) continue;
                         int nx = coastalTarget->lastTileX + dx;
                         int ny = coastalTarget->lastTileY + dy;
@@ -858,13 +869,15 @@ void TacticalAI::planNavy(const sim::WorldSim& sim,
             if (!ship->hasPath()) {
                 // Tuần tra ven biển mở sương mù
                 // Đi dọc theo bờ biển (xem các ô COASTAL_SEA phía địch)
-                int patrolX = (m_controlledFaction == sim::Faction::Enemy) ? (mapW / 2 - 10) : (mapW / 2 + 10);
+                int patrolX = (m_controlledFaction == sim::Faction::Enemy) ? (mapW / 2 - 1 - 10) : (mapW / 2 + 10);
                 int patrolY = (i % 2 == 0) ? (mapH / 4) : (3 * mapH / 4);
 
+                int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
                 for (int radius = 0; radius < 25; ++radius) {
                     bool found = false;
                     for (int dy = -radius; dy <= radius; ++dy) {
-                        for (int dx = -radius; dx <= radius; ++dx) {
+                        for (int step = -radius; step <= radius; ++step) {
+                            int dx = step * xDirSign;
                             int nx = patrolX + dx;
                             int ny = patrolY + dy;
                             if (!map.isInBounds(nx, ny)) continue;
@@ -1037,10 +1050,12 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
 
             // Với bộ binh: tìm ô địa hình có lợi (Rừng/Đồi) gần mục tiêu trong bán kính 2-3 ô để tận dụng cover
             if (u->getType() == sim::UnitType::Infantry) {
+                int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
                 for (int r = 1; r <= 3; ++r) {
                     bool foundCover = false;
                     for (int dy = -r; dy <= r; ++dy) {
-                        for (int dx = -r; dx <= r; ++dx) {
+                        for (int step = -r; step <= r; ++step) {
+                            int dx = step * xDirSign;
                             int cx = targetX + dx;
                             int cy = targetY + dy;
                             if (!map.isInBounds(cx, cy)) continue;
@@ -1095,8 +1110,9 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                     );
                     // Nếu đã tới gần điểm trinh sát ban đầu: đẩy sâu về phía căn cứ đối phương (nếu enableDeepPush)
                     if (m_ablationFlags.enableDeepPush && std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
-                        int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (map.getWidth() - 9);
-                        int enemyBaseY = (scoutCount % 2 == 0) ? (map.getHeight() / 3) : (2 * map.getHeight() / 3);
+                        int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorX() : sim.getEnemySpawnAnchorX();
+                        int enemyAnchorY = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorY() : sim.getEnemySpawnAnchorY();
+                        int enemyBaseY = (scoutCount % 2 == 0) ? std::max(4, enemyAnchorY - 10) : std::min(map.getHeight() - 5, enemyAnchorY + 10);
                         scoutTarget = findPassableTileNear(sim, enemyBaseX, enemyBaseY, u->getDomain(), u->getType(), 15);
                         m_unitIntents[u->getId()] = "Scouting (Deep Recon)";
                     }
@@ -1127,8 +1143,9 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
                             u->getDomain(), u->getType()
                         );
                         if (m_ablationFlags.enableDeepPush && std::abs(u->getTileX() - scoutTarget.x) <= 3 && std::abs(u->getTileY() - scoutTarget.y) <= 3) {
-                            int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? 8 : (map.getWidth() - 9);
-                            int enemyBaseY = (scoutCount % 2 == 0) ? (map.getHeight() / 3) : (2 * map.getHeight() / 3);
+                            int enemyBaseX = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorX() : sim.getEnemySpawnAnchorX();
+                            int enemyAnchorY = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorY() : sim.getEnemySpawnAnchorY();
+                            int enemyBaseY = (scoutCount % 2 == 0) ? std::max(4, enemyAnchorY - 10) : std::min(map.getHeight() - 5, enemyAnchorY + 10);
                             scoutTarget = findPassableTileNear(sim, enemyBaseX, enemyBaseY, u->getDomain(), u->getType(), 15);
                             m_unitIntents[u->getId()] = "Scouting (Deep Recon)";
                         }
@@ -1159,14 +1176,14 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
         // Nhóm Tăng chủ lực & Bộ binh: aggression điều khiển tỉ lệ tấn công vs giữ hậu phương và cự ly tiến quân
         int halfW = map.getWidth() / 2;
         int advanceOffset = static_cast<int>(6.0f + 24.0f * std::clamp(m_params.aggression, 0.15f, 1.50f));
-        int offensiveDestX = (m_controlledFaction == sim::Faction::Enemy) ? (halfW - advanceOffset) : (halfW + advanceOffset);
+        int offensiveDestX = (m_controlledFaction == sim::Faction::Enemy) ? (halfW - 1 - advanceOffset) : (halfW + advanceOffset);
         offensiveDestX = std::clamp(offensiveDestX, 4, map.getWidth() - 5);
 
         // Tỉ lệ quân tham gia tiến công (thay vì ở lại bảo vệ hậu tuyến)
         float attackRatio = std::clamp(0.25f + 0.75f * (m_params.aggression / 1.5f), 0.25f, 1.0f);
         int maxAttackers = std::max(1, static_cast<int>(std::round(static_cast<float>(combatUnits.size()) * attackRatio)));
 
-        int cmdX = (commander) ? commander->getTileX() : ((m_controlledFaction == sim::Faction::Enemy) ? (map.getWidth() - 12) : 12);
+        int cmdX = (commander) ? commander->getTileX() : ((m_controlledFaction == sim::Faction::Enemy) ? sim.getEnemySpawnAnchorX() : sim.getPlayerSpawnAnchorX());
         int guardOffset = std::clamp(static_cast<int>(m_params.commanderSafeRadiusTiles * 0.45f), 2, 12);
         int rearX = (m_controlledFaction == sim::Faction::Enemy) ? (cmdX - guardOffset) : (cmdX + guardOffset);
         rearX = std::clamp(rearX, 2, map.getWidth() - 3);
@@ -1188,8 +1205,10 @@ void TacticalAI::planInfantryAndArmor(const sim::WorldSim& sim,
 
             // NẾU đơn vị tấn công đã đến tuyến tập kết offensiveDestX mà vẫn không thấy địch:
             // Đẩy sâu hơn về phía căn cứ đối phương để tìm diệt (nếu enableDeepPush)!
-            if (m_ablationFlags.enableDeepPush && isAttacking && std::abs(u->getTileX() - offensiveDestX) <= 4) {
-                destX = (m_controlledFaction == sim::Faction::Enemy) ? 10 : (map.getWidth() - 11);
+            // Chỉ những đơn vị có đủ máu (hpRatio >= retreatHpRatio) mới được tiến công sâu vào căn cứ địch
+            float uHpRatio = static_cast<float>(u->getHp()) / static_cast<float>(std::max(1, u->getMaxHp()));
+            if (m_ablationFlags.enableDeepPush && isAttacking && uHpRatio >= m_params.retreatHpRatio && std::abs(u->getTileX() - offensiveDestX) <= 4) {
+                destX = (m_controlledFaction == sim::Faction::Enemy) ? sim.getPlayerSpawnAnchorX() : sim.getEnemySpawnAnchorX();
                 m_unitIntents[u->getId()] = "Advancing (Push Enemy Base)";
             }
 
@@ -1211,9 +1230,11 @@ sim::TileCoord TacticalAI::findPassableTileNear(const sim::WorldSim& sim,
                                                 sim::UnitDomain domain, sim::UnitType type,
                                                 int maxRadius) const {
     const auto& map = sim.getMap();
+    int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
     for (int r = 0; r <= maxRadius; ++r) {
         for (int dy = -r; dy <= r; ++dy) {
-            for (int dx = -r; dx <= r; ++dx) {
+            for (int step = -r; step <= r; ++step) {
+                int dx = step * xDirSign;
                 if (r > 0 && std::abs(dx) != r && std::abs(dy) != r) continue;
                 int nx = targetX + dx;
                 int ny = targetY + dy;
@@ -1244,9 +1265,11 @@ sim::TileCoord TacticalAI::findSafeRetreatTile(const sim::WorldSim& sim,
         dirX = (m_controlledFaction == sim::Faction::Enemy) ? 1 : -1;
     }
 
+    int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
     for (int r = minRadius; r <= maxRadius; ++r) {
         for (int dy = -r; dy <= r; ++dy) {
-            for (int dx = -r; dx <= r; ++dx) {
+            for (int step = -r; step <= r; ++step) {
+                int dx = step * xDirSign;
                 if (std::abs(dx) != r && std::abs(dy) != r) continue;
 
                 int nx = currentTileX + dx;
@@ -1298,9 +1321,11 @@ sim::TileCoord TacticalAI::findArtilleryStandOffTile(const sim::WorldSim& sim,
     float bestDiff = 999.0f;
 
     int rTarget = static_cast<int>(std::round(idealRangeTiles));
+    int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
     for (int r = std::max(2, rTarget - 2); r <= rTarget + 2; ++r) {
         for (int dy = -r; dy <= r; ++dy) {
-            for (int dx = -r; dx <= r; ++dx) {
+            for (int step = -r; step <= r; ++step) {
+                int dx = step * xDirSign;
                 if (std::abs(dx) != r && std::abs(dy) != r) continue;
 
                 int nx = targetTileX + dx;
@@ -1344,15 +1369,17 @@ sim::TileCoord TacticalAI::pickScoutingTarget(const sim::WorldSim& sim,
     int baseOffset = static_cast<int>(8.0f + 18.0f * depthFactor);
 
     int targetX = (m_controlledFaction == sim::Faction::Enemy)
-                  ? std::clamp(midW - baseOffset + (scoutIndex % 2) * 8, 4, mapW - 5)
+                  ? std::clamp((midW - 1) - baseOffset + (scoutIndex % 2) * 8, 4, mapW - 5)
                   : std::clamp(midW + baseOffset - (scoutIndex % 2) * 8, 4, mapW - 5);
 
     int targetY = (mapH / (nSectors + 1)) * (sector + 1);
 
     // Tìm ô passable gần đó
+    int xDirSign = (m_controlledFaction == sim::Faction::Enemy) ? -1 : 1;
     for (int r = 0; r < 20; ++r) {
         for (int dy = -r; dy <= r; ++dy) {
-            for (int dx = -r; dx <= r; ++dx) {
+            for (int step = -r; step <= r; ++step) {
+                int dx = step * xDirSign;
                 int nx = targetX + dx;
                 int ny = targetY + dy;
                 if (!map.isInBounds(nx, ny)) continue;

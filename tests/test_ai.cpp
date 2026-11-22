@@ -522,6 +522,95 @@ void testParameterEffectiveness() {
     std::cout << "  -> PASSED: Toan bo cac tham so AI deu da duoc chung minh co tac dung thuc te 100%!" << std::endl;
 }
 
+// =============================================================================
+// TEST 6: Kiểm tra tính đối xứng phản chiếu phe phái (Faction Symmetry Test)
+// =============================================================================
+void testSymmetry() {
+    std::cout << "[TestAI] 6. Kiem tra tinh doi xung phan chieu phe phai (Faction Symmetry Test)..." << std::endl;
+
+    constexpr uint64_t SEED = 42ULL;
+
+    WorldMap map(128, 96, 32);
+    map.fill(TerrainType::Plain);
+
+    WorldSim simPlayer(map);
+    initSim(simPlayer);
+
+    WorldSim simEnemy(map);
+    initSim(simEnemy);
+
+    const auto* comCfg = simPlayer.getConfig().getUnitConfig(UnitType::Commander);
+    const auto* infCfg = simPlayer.getConfig().getUnitConfig(UnitType::Infantry);
+    const auto* pumaCfg = simPlayer.getConfig().getUnitConfig(UnitType::Puma);
+
+    // 1. Commander under threat:
+    // Player commander at (30, 48), Enemy threat at (34, 48)
+    simPlayer.getUnits().emplace_back(1, Faction::Player, UnitType::Commander, 30000, 48000, *comCfg);
+    simPlayer.getUnits().emplace_back(2, Faction::Enemy, UnitType::Infantry, 34000, 48000, *infCfg);
+    // Player Puma at (25, 48)
+    simPlayer.getUnits().emplace_back(3, Faction::Player, UnitType::Puma, 25000, 48000, *pumaCfg);
+    // Player combat Infantry at (28, 48)
+    simPlayer.getUnits().emplace_back(4, Faction::Player, UnitType::Infantry, 28000, 48000, *infCfg);
+    simPlayer.updateVision();
+
+    // Mirrored setup for Enemy: x -> 127 - x
+    // Enemy commander at 127 - 30 = 97, Player threat at 127 - 34 = 93
+    simEnemy.getUnits().emplace_back(1, Faction::Enemy, UnitType::Commander, 97000, 48000, *comCfg);
+    simEnemy.getUnits().emplace_back(2, Faction::Player, UnitType::Infantry, 93000, 48000, *infCfg);
+    // Enemy Puma at 127 - 25 = 102
+    simEnemy.getUnits().emplace_back(3, Faction::Enemy, UnitType::Puma, 102000, 48000, *pumaCfg);
+    // Enemy combat Infantry at 127 - 28 = 99
+    simEnemy.getUnits().emplace_back(4, Faction::Enemy, UnitType::Infantry, 99000, 48000, *infCfg);
+    simEnemy.updateVision();
+
+    TacticalAI aiPlayer(Faction::Player, SEED);
+    TacticalAI aiEnemy(Faction::Enemy, SEED);
+
+    std::vector<Command> cmdsP = aiPlayer.plan(simPlayer);
+    std::vector<Command> cmdsE = aiEnemy.plan(simEnemy);
+
+    auto findTarget = [](const std::vector<Command>& cmds, uint32_t unitId) -> sim::TileCoord {
+        for (const auto& cmd : cmds) {
+            if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == unitId) {
+                return {cmd.move.targetTileX, cmd.move.targetTileY};
+            }
+        }
+        return {-1, -1};
+    };
+
+    // Check Commander retreat symmetry
+    sim::TileCoord cmdTargetP = findTarget(cmdsP, 1);
+    sim::TileCoord cmdTargetE = findTarget(cmdsE, 1);
+    assert(cmdTargetP.x != -1 && cmdTargetE.x != -1 && "Commander phai co lenh di chuyen!");
+    assert(cmdTargetP.x + cmdTargetE.x == 127 && "Dich den Commander phai doi xung: x_P + x_E == 127!");
+    assert(cmdTargetP.y == cmdTargetE.y && "Dich den Commander phai co Y giong nhau!");
+    std::cout << "  - Commander retreat symmetry: P=(" << cmdTargetP.x << "," << cmdTargetP.y
+              << ") vs E=(" << cmdTargetE.x << "," << cmdTargetE.y << ") -> x_P + x_E = "
+              << (cmdTargetP.x + cmdTargetE.x) << " (PASSED)" << std::endl;
+
+    // Check Puma scouting symmetry
+    sim::TileCoord pumaTargetP = findTarget(cmdsP, 3);
+    sim::TileCoord pumaTargetE = findTarget(cmdsE, 3);
+    assert(pumaTargetP.x != -1 && pumaTargetE.x != -1 && "Puma phai co lenh trinh sat!");
+    assert(pumaTargetP.x + pumaTargetE.x == 127 && "Dich den Puma phai doi xung: x_P + x_E == 127!");
+    assert(pumaTargetP.y == pumaTargetE.y && "Dich den Puma phai co Y giong nhau!");
+    std::cout << "  - Puma scout symmetry: P=(" << pumaTargetP.x << "," << pumaTargetP.y
+              << ") vs E=(" << pumaTargetE.x << "," << pumaTargetE.y << ") -> x_P + x_E = "
+              << (pumaTargetP.x + pumaTargetE.x) << " (PASSED)" << std::endl;
+
+    // Check Infantry offensive advance symmetry
+    sim::TileCoord infTargetP = findTarget(cmdsP, 4);
+    sim::TileCoord infTargetE = findTarget(cmdsE, 4);
+    assert(infTargetP.x != -1 && infTargetE.x != -1 && "Bo binh phai co lenh tien quan!");
+    assert(infTargetP.x + infTargetE.x == 127 && "Dich den Bo binh phai doi xung: x_P + x_E == 127!");
+    assert(infTargetP.y == infTargetE.y && "Dich den Bo binh phai co Y giong nhau!");
+    std::cout << "  - Infantry advance symmetry: P=(" << infTargetP.x << "," << infTargetP.y
+              << ") vs E=(" << infTargetE.x << "," << infTargetE.y << ") -> x_P + x_E = "
+              << (infTargetP.x + infTargetE.x) << " (PASSED)" << std::endl;
+
+    std::cout << "  -> PASSED: Quyet dinh chien thuat cua Player va Enemy hoan toan doi xung phan chieu 100%!" << std::endl;
+}
+
 int main() {
     std::cout << "====================================================" << std::endl;
     std::cout << "BAT DAU TEST SUITE CHO MOC M7: TACTICAL AI" << std::endl;
@@ -532,9 +621,10 @@ int main() {
     testTacticalBehaviors();
     testCombatAndMovementEngagement();
     testParameterEffectiveness();
+    testSymmetry();
 
     std::cout << "====================================================" << std::endl;
-    std::cout << "TAT CA 5/5 TEST M7 CHO TACTICAL AI DEU PASS 100%!" << std::endl;
+    std::cout << "TAT CA 6/6 TEST M7 CHO TACTICAL AI DEU PASS 100%!" << std::endl;
     std::cout << "====================================================" << std::endl;
     return 0;
 }
