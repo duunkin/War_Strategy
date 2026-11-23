@@ -657,6 +657,48 @@ void testSymmetry() {
     std::cout << "  -> PASSED: Quyet dinh chien thuat cua Player va Enemy hoan toan doi xung phan chieu 100%!" << std::endl;
 }
 
+// =============================================================================
+// TEST 7: Kiem tra thoat trang thai rut lui khi khong co nguy co (M9.9 Item 2)
+// =============================================================================
+void testWoundedUnitRetreatExit() {
+    std::cout << "[TestAI] 7. Kiem tra thoat trang thai rut lui khi khong co nguy co (M9.9 Item 2)..." << std::endl;
+
+    WorldMap map(128, 96, 32);
+    WorldSim sim(map);
+    initSim(sim);
+
+    const auto* tankCfg = sim.getConfig().getUnitConfig(UnitType::Leopard2A);
+
+    // Don vi bi thuong nang: mau 20% (< retreatHpRatio 30%)
+    sim.getUnits().emplace_back(100, Faction::Player, UnitType::Leopard2A, 10000, 48000, *tankCfg);
+    sim.getUnits().back().takeDamage(sim.getUnits().back().getMaxHp() * 80 / 100); // 20% HP
+
+    // Khong co ke dich nao trong tam nhin hay bo nho
+    sim.updateVision();
+
+    AiParams params;
+    params.enableUnitRetreat = true;
+    params.retreatHpRatio = 0.30f;
+    params.threatRadiusTiles = 16.0f;
+
+    // Kiem tra voi logic hien tai: khong co dich gan -> khong bi ket Retreating vo tan
+    TacticalAI ai(Faction::Player, 12345ULL, params);
+    auto cmds = ai.plan(sim);
+
+    bool receivedForwardOrRegroupOrder = false;
+    for (const auto& cmd : cmds) {
+        if (cmd.type == CommandType::Move && !cmd.move.unitIds.empty() && cmd.move.unitIds[0] == 100) {
+            // Don vi nhan lenh di chuyen tien len (targetTileX >= 10) thay vi bi khoa dung yen
+            if (cmd.move.targetTileX >= 10) {
+                receivedForwardOrRegroupOrder = true;
+            }
+        }
+    }
+
+    assert(receivedForwardOrRegroupOrder && "Don vi bi thuong khi khong co dich phai nhan lenh tien quan/tap hop, khong bi dong bang!");
+    std::cout << "  -> PASSED: Don vi bi thuong (20% HP) khi khong co dich da thoat trang thai rut lui thanh cong!" << std::endl;
+}
+
 int main() {
     std::cout << "====================================================" << std::endl;
     std::cout << "BAT DAU TEST SUITE CHO MOC M7: TACTICAL AI" << std::endl;
@@ -668,9 +710,10 @@ int main() {
     testCombatAndMovementEngagement();
     testParameterEffectiveness();
     testSymmetry();
+    testWoundedUnitRetreatExit();
 
     std::cout << "====================================================" << std::endl;
-    std::cout << "TAT CA 6/6 TEST M7 CHO TACTICAL AI DEU PASS 100%!" << std::endl;
+    std::cout << "TAT CA 7/7 TEST M7 CHO TACTICAL AI DEU PASS 100%!" << std::endl;
     std::cout << "====================================================" << std::endl;
     return 0;
 }
