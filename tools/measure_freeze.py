@@ -66,6 +66,8 @@ def run_seed(seed, max_ticks=24000):
 
 if __name__ == "__main__":
     seeds_to_run = SEEDS if len(sys.argv) <= 1 else [int(x) for x in sys.argv[1:]]
+    seeds_str = ",".join(str(s) for s in seeds_to_run)
+    print(f"MAP: generated (seed={seeds_str})")
     for s in seeds_to_run:
         res = run_seed(s)
         t7200 = res["traces"].get(7200, {"ai1_troops": "?", "ai2_troops": "?"})

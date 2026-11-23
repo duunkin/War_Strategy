@@ -70,12 +70,17 @@ def run_seed_task(args):
     }
 
 def main():
+    max_ticks = 12000
+    if len(sys.argv) > 1:
+        max_ticks = int(sys.argv[1])
+    seeds_str = ",".join(str(s) for s in SEEDS)
+    print(f"MAP: generated (seed={seeds_str})")
     print(f"{'Config':<25} | {'Unfrozen':<10} | {'Cmd Dead':<10} | {'Blue/Red/Draw':<15} | Details")
     print("-" * 85)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         for name, flags in CONFIGS:
-            tasks = [(seed, flags, 24000) for seed in SEEDS]
+            tasks = [(seed, flags, max_ticks) for seed in SEEDS]
             results = list(executor.map(run_seed_task, tasks))
 
             unfrozen_count = 0
@@ -92,7 +97,7 @@ def main():
                 t7200 = res["traces"].get(7200, {"ai1_troops": "?", "ai2_troops": "?"})
                 t12000 = res["traces"].get(12000, {"ai1_troops": "?", "ai2_troops": "?"})
                 troops_changed = (t7200 != t12000)
-                ended_early = (res["end_tick"] < 24000)
+                ended_early = (res["end_tick"] < max_ticks)
                 is_unfrozen = (ended_early or troops_changed)
 
                 if is_unfrozen:

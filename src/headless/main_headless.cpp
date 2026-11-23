@@ -342,6 +342,7 @@ int main(int argc, char* argv[]) {
         mapgen::MapGenConfig mapCfg;
         mapgen::MapGenerator mapGen;
         mapGen.generate(map, currentSeed, mapCfg);
+        std::cout << "MAP: generated (seed=" << currentSeed << ")\n";
 
         sim.spawnDivisions(currentSeed);
 

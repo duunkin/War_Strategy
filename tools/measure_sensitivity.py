@@ -94,6 +94,8 @@ def main():
         for i in range(len(DEFAULT_SEEDS), num_seeds):
             seeds.append(50000 + i * 1111)
 
+    seeds_str = ",".join(str(s) for s in seeds)
+    print(f"MAP: generated (seed={seeds_str})")
     print("=" * 105)
     print(f"      WAR STRATEGY - PARAMETER SENSITIVITY BENCHMARK ({len(seeds)} SEEDS)")
     print("=" * 105)
