@@ -109,6 +109,51 @@ void testParamsBoundsAndJsonRoundTrip() {
         std::filesystem::remove(testJsonPath);
     }
 
+    // Kiem tra tuong thich nguoc: Profile JSON cu thieu threatRadiusTiles (M9.9 Item 4)
+    {
+        const std::string legacyJsonPath = "test_legacy_profile.json";
+
+        // 1. Dang profile co metadata + params (thieu threatRadiusTiles)
+        {
+            std::ofstream f(legacyJsonPath);
+            f << R"({
+                "metadata": {"generation": 5, "fitness": 120.0},
+                "params": {
+                    "aggression": 0.85,
+                    "retreatHpRatio": 0.25,
+                    "decisionIntervalTicks": 20
+                }
+            })";
+        }
+        AiParams loadedLegacy;
+        loadedLegacy.threatRadiusTiles = 30.0f; // co tinh gan gia tri khac truoc khi nap
+        AiTrainingMetadata legacyMeta;
+        assert(loadTrainedAiProfile(legacyJsonPath, loadedLegacy, &legacyMeta) && "Doc profile cu phai thanh cong!");
+        assert(std::abs(loadedLegacy.threatRadiusTiles - 16.0f) < 1e-4f && "Profile cu thieu threatRadiusTiles phai mac dinh la 16.0f!");
+        assert(std::abs(loadedLegacy.aggression - 0.85f) < 1e-4f);
+        assert(std::abs(loadedLegacy.retreatHpRatio - 0.25f) < 1e-4f);
+        assert(legacyMeta.generation == 5);
+
+        // 2. Dang phang truc tiep (thieu threatRadiusTiles)
+        {
+            std::ofstream f(legacyJsonPath);
+            f << R"({
+                "aggression": 0.70,
+                "retreatHpRatio": 0.35,
+                "focusFireWeight": 1.5
+            })";
+        }
+        AiParams loadedFlat;
+        loadedFlat.threatRadiusTiles = 25.0f;
+        assert(loadTrainedAiProfile(legacyJsonPath, loadedFlat) && "Doc JSON phang cu phai thanh cong!");
+        assert(std::abs(loadedFlat.threatRadiusTiles - 16.0f) < 1e-4f && "JSON phang cu thieu threatRadiusTiles phai mac dinh la 16.0f!");
+        assert(std::abs(loadedFlat.aggression - 0.70f) < 1e-4f);
+        assert(std::abs(loadedFlat.retreatHpRatio - 0.35f) < 1e-4f);
+
+        std::filesystem::remove(legacyJsonPath);
+        std::cout << "  - Backward compatibility: Profile JSON cu khong co 'threatRadiusTiles' tu dong dung mac dinh 16.0f (PASSED)" << std::endl;
+    }
+
     // Kiểm tra chuẩn hóa Score_shaping: Thua do Tư lệnh chết (dù nhiều hơn 10.000 bộ binh) LUÔN < Thắng Timeout
     {
         SingleMatchResult lossWithMoreTroops;

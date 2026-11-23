@@ -117,7 +117,11 @@ inline void from_json(const nlohmann::json& j, AiParams& p) {
     if (j.contains("enableCommanderRetreat")) j.at("enableCommanderRetreat").get_to(p.enableCommanderRetreat);
     if (j.contains("enableUnitRetreat")) j.at("enableUnitRetreat").get_to(p.enableUnitRetreat);
     if (j.contains("scoutingGroupCount")) j.at("scoutingGroupCount").get_to(p.scoutingGroupCount);
-    if (j.contains("threatRadiusTiles")) j.at("threatRadiusTiles").get_to(p.threatRadiusTiles);
+    if (j.contains("threatRadiusTiles")) {
+        j.at("threatRadiusTiles").get_to(p.threatRadiusTiles);
+    } else {
+        p.threatRadiusTiles = 16.0f;
+    }
     clampParams(p);
 }
 
