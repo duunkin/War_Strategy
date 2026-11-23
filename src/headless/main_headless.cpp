@@ -249,6 +249,22 @@ int main(int argc, char* argv[]) {
             auto flags = ai::TacticalAI::getGlobalAblationFlags();
             flags.enableCommanderStabilization = false;
             ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-gepard-escort") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableGepardFrontlineEscort = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-symmetry") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableSymmetryMirroring = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-deep-push-hp") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableDeepPushHpCheck = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
+        } else if (arg == "--ablate-no-threat-radius") {
+            auto flags = ai::TacticalAI::getGlobalAblationFlags();
+            flags.enableThreatRadiusTiles = false;
+            ai::TacticalAI::setGlobalAblationFlags(flags);
         } else if (arg == "--ablate-all-off") {
             ai::TacticalAblationFlags flags;
             flags.enableSafeRetreatExit = false;
@@ -256,6 +272,10 @@ int main(int argc, char* argv[]) {
             flags.enableDeepPush = false;
             flags.enableTargetFiltering = false;
             flags.enableCommanderStabilization = false;
+            flags.enableGepardFrontlineEscort = false;
+            flags.enableSymmetryMirroring = false;
+            flags.enableDeepPushHpCheck = false;
+            flags.enableThreatRadiusTiles = false;
             ai::TacticalAI::setGlobalAblationFlags(flags);
         }
     }

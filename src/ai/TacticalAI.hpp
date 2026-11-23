@@ -17,11 +17,15 @@ namespace ai {
  * @brief Cờ thử nghiệm bóc tách (Ablation Flags - M9.8) để bật/tắt riêng rẽ từng cải tiến của M9.7
  */
 struct TacticalAblationFlags {
-    bool enableSafeRetreatExit{true};       // 1. Cho phép đơn vị bị thương an toàn (>16 ô) thoát rút lui
-    bool enableReconInheritance{true};      // 2. Phân công bộ binh/IFV làm trinh sát khi hết Puma
-    bool enableDeepPush{true};              // 3. Tiến sâu vào căn cứ địch khi tới tuyến tập kết
-    bool enableTargetFiltering{true};       // 4. Lọc bỏ mục tiêu không thể tấn công (ví dụ bộ binh nhắm tàu)
-    bool enableCommanderStabilization{true};// 5. Không cho Tư lệnh tháo chạy hoảng loạn khi không có địch
+    bool enableSafeRetreatExit{true};       // 1. Cho phep don vi bi thuong an toan (>16 o) thoat rut lui
+    bool enableReconInheritance{true};      // 2. Phan cong bo binh/IFV lam trinh sat khi het Puma
+    bool enableDeepPush{true};              // 3. Tien sau vao can cu dich khi toi tuyen tap ket
+    bool enableTargetFiltering{true};       // 4. Loc bo muc tieu khong the tan cong (vi du bo binh nham tau)
+    bool enableCommanderStabilization{true};// 5. Khong cho Tu lenh thao chay hoang loan khi khong co dich
+    bool enableGepardFrontlineEscort{true}; // 6. Gepard uu tien bao ve Caesar/chu luc thay vi Tu lenh o can cu
+    bool enableSymmetryMirroring{true};     // 7. Su dung xDirSign va anchor phan chieu doi xung hoan hao
+    bool enableDeepPushHpCheck{true};       // 8. Chi cho don vi hpRatio >= retreatHpRatio moi push sau
+    bool enableThreatRadiusTiles{true};     // 9. Dung tham so threatRadiusTiles thay vi hang so cung 16.0f
 };
 
 /**
