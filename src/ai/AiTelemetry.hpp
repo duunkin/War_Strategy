@@ -301,7 +301,7 @@ inline WilsonCI wilsonScoreInterval(int successes, int total) {
     const double z2 = z * z;
     const double denom = 1.0 + z2 / n;
     const double centre = p + z2 / (2.0 * n);
-    const double spread = z * std::sqrt((p * (1.0 - p) + z2 / (4.0 * n)) / n);
+    const double spread = z * std::sqrt(std::max(0.0, (p * (1.0 - p) + z2 / (4.0 * n)) / n));
     return {
         std::max(0.0, (centre - spread) / denom),
         std::min(1.0, (centre + spread) / denom)

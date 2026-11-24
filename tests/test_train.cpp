@@ -582,7 +582,7 @@ static void testFactionBreakdownAndPairClassification() {
     assert(ci50.upper > 0.59 && ci50.upper < 0.61);
 
     ai::WilsonCI ci100 = ai::wilsonScoreInterval(100, 100);
-    assert(ci100.upper == 1.0);
+    assert(std::abs(ci100.upper - 1.0) < 1e-9);
     assert(ci100.lower > 0.95);
 
     double pValEqual = ai::pairedSignTestPValue(5, 5);
