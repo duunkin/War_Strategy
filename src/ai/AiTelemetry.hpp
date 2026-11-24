@@ -4,6 +4,8 @@
 #include "../sim/units/Unit.hpp"
 
 #include <string>
+#include <sstream>
+#include <iomanip>
 #include <cstdint>
 #include <vector>
 #include <fstream>
@@ -137,6 +139,7 @@ struct AiTrainingMetadata {
     uint32_t    trainedMatches{0};
     std::string algorithm{"evo"}; // "evo" | "adapt"
     std::string timestamp{""};
+    std::string baselineProfile{"defaults"}; // M9.12
 };
 
 inline void to_json(nlohmann::json& j, const AiTrainingMetadata& m) {
@@ -146,7 +149,8 @@ inline void to_json(nlohmann::json& j, const AiTrainingMetadata& m) {
         {"winRateVsBaseline", m.winRateVsBaseline},
         {"trainedMatches", m.trainedMatches},
         {"algorithm", m.algorithm},
-        {"timestamp", m.timestamp}
+        {"timestamp", m.timestamp},
+        {"baselineProfile", m.baselineProfile}
     };
 }
 
@@ -157,6 +161,74 @@ inline void from_json(const nlohmann::json& j, AiTrainingMetadata& m) {
     if (j.contains("trainedMatches")) j.at("trainedMatches").get_to(m.trainedMatches);
     if (j.contains("algorithm")) j.at("algorithm").get_to(m.algorithm);
     if (j.contains("timestamp")) j.at("timestamp").get_to(m.timestamp);
+    if (j.contains("baselineProfile")) {
+        j.at("baselineProfile").get_to(m.baselineProfile);
+    } else {
+        m.baselineProfile = "defaults";
+    }
+}
+
+// =============================================================================
+// So sánh tham số AiParams với bộ mặc định (M9.12)
+// =============================================================================
+struct ParamDiff {
+    std::string name;
+    std::string defaultValue;
+    std::string currentValue;
+};
+
+inline std::vector<ParamDiff> getParamDiffsFromDefault(const AiParams& p) {
+    AiParams d{};
+    std::vector<ParamDiff> diffs;
+    auto formatFloat = [](float val) {
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(4) << val;
+        std::string str = ss.str();
+        str.erase(str.find_last_not_of('0') + 1, std::string::npos);
+        if (str.back() == '.') str.push_back('0');
+        return str;
+    };
+
+    if (p.decisionIntervalTicks != d.decisionIntervalTicks) {
+        diffs.push_back({"decisionIntervalTicks", std::to_string(d.decisionIntervalTicks), std::to_string(p.decisionIntervalTicks)});
+    }
+    if (std::abs(p.aggression - d.aggression) >= 1e-4f) {
+        diffs.push_back({"aggression", formatFloat(d.aggression), formatFloat(p.aggression)});
+    }
+    if (std::abs(p.retreatHpRatio - d.retreatHpRatio) >= 1e-4f) {
+        diffs.push_back({"retreatHpRatio", formatFloat(d.retreatHpRatio), formatFloat(p.retreatHpRatio)});
+    }
+    if (std::abs(p.commanderSafeRadiusTiles - d.commanderSafeRadiusTiles) >= 1e-4f) {
+        diffs.push_back({"commanderSafeRadiusTiles", formatFloat(d.commanderSafeRadiusTiles), formatFloat(p.commanderSafeRadiusTiles)});
+    }
+    if (std::abs(p.artilleryStandOffMargin - d.artilleryStandOffMargin) >= 1e-4f) {
+        diffs.push_back({"artilleryStandOffMargin", formatFloat(d.artilleryStandOffMargin), formatFloat(p.artilleryStandOffMargin)});
+    }
+    if (std::abs(p.artilleryIdealRangeRatio - d.artilleryIdealRangeRatio) >= 1e-4f) {
+        diffs.push_back({"artilleryIdealRangeRatio", formatFloat(d.artilleryIdealRangeRatio), formatFloat(p.artilleryIdealRangeRatio)});
+    }
+    if (std::abs(p.scoutingWeight - d.scoutingWeight) >= 1e-4f) {
+        diffs.push_back({"scoutingWeight", formatFloat(d.scoutingWeight), formatFloat(p.scoutingWeight)});
+    }
+    if (std::abs(p.focusFireWeight - d.focusFireWeight) >= 1e-4f) {
+        diffs.push_back({"focusFireWeight", formatFloat(d.focusFireWeight), formatFloat(p.focusFireWeight)});
+    }
+    if (p.targetMemoryTicks != d.targetMemoryTicks) {
+        diffs.push_back({"targetMemoryTicks", std::to_string(d.targetMemoryTicks), std::to_string(p.targetMemoryTicks)});
+    }
+    if (p.enableCommanderRetreat != d.enableCommanderRetreat) {
+        diffs.push_back({"enableCommanderRetreat", d.enableCommanderRetreat ? "true" : "false", p.enableCommanderRetreat ? "true" : "false"});
+    }
+    if (p.enableUnitRetreat != d.enableUnitRetreat) {
+        diffs.push_back({"enableUnitRetreat", d.enableUnitRetreat ? "true" : "false", p.enableUnitRetreat ? "true" : "false"});
+    }
+    if (p.scoutingGroupCount != d.scoutingGroupCount) {
+        diffs.push_back({"scoutingGroupCount", std::to_string(d.scoutingGroupCount), std::to_string(p.scoutingGroupCount)});
+    }
+    if (std::abs(p.threatRadiusTiles - d.threatRadiusTiles) >= 1e-4f) {
+        diffs.push_back({"threatRadiusTiles", formatFloat(d.threatRadiusTiles), formatFloat(p.threatRadiusTiles)});
+    }
+    return diffs;
 }
 
 /**

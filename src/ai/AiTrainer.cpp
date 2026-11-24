@@ -484,6 +484,20 @@ AiTrainer::AiTrainer(const TrainerConfig& config)
         m_config.threadCount = std::max(1u, std::thread::hardware_concurrency());
     }
 
+    // Nạp baseline AI nếu được cấu hình (M9.12)
+    if (!m_config.baselineFile.empty()) {
+        if (!loadTrainedAiProfile(m_config.baselineFile, m_baselineParams)) {
+            std::cerr << "[AiTrainer] Khong the nap baseline file: " << m_config.baselineFile
+                      << ", dung mac dinh AiParams{}.\n";
+            m_baselineParams = AiParams{};
+        } else {
+            std::cout << "[AiTrainer] Da nap baseline tu " << m_config.baselineFile << "\n";
+        }
+    } else {
+        m_baselineParams = AiParams{};
+    }
+    clampParams(m_baselineParams);
+
     // Nạp checkpoint từ file resume nếu có
     if (!m_config.resumeFile.empty()) {
         AiParams loadedParams;
@@ -494,13 +508,14 @@ AiTrainer::AiTrainer(const TrainerConfig& config)
             std::cout << "[AiTrainer] Da nap profile tu " << m_config.resumeFile
                       << " (Gen " << loadedMeta.generation << ", Fit " << loadedMeta.fitness << ")\n";
         } else {
-            std::cerr << "[AiTrainer] Khong the nap resume file: " << m_config.resumeFile << ", dung mac dinh M7.\n";
-            m_bestParams = AiParams{};
+            std::cerr << "[AiTrainer] Khong the nap resume file: " << m_config.resumeFile << ", dung baseline.\n";
+            m_bestParams = m_baselineParams;
         }
     } else {
-        m_bestParams = AiParams{};
+        m_bestParams = m_baselineParams;
     }
     clampParams(m_bestParams);
+    m_bestMetadata.baselineProfile = m_config.baselineFile.empty() ? "defaults" : m_config.baselineFile;
 
     m_liveWatch.totalGen = m_config.generations;
     m_liveWatch.bestFitness = -99999.0f;
@@ -661,9 +676,10 @@ bool AiTrainer::runEvolution() {
         population[i].params = mutate(m_bestParams, m_config.mutationRateInitial, rng);
     }
 
-    // Hall of Fame lưu lại các quán quân của các thế hệ trước
+    // Hall of Fame lưu lại các quán quân của các thế hệ trước (khởi tạo với baseline)
     std::vector<AiParams> hallOfFame;
-    AiParams baselineParams{};
+    AiParams baselineParams = m_baselineParams;
+    hallOfFame.push_back(baselineParams);
 
     // Bộ seed validation cố định (cho phép giá trị nhỏ hơn 8, cảnh báo nếu < 4)
     uint32_t numValSeeds = m_config.validationSeeds;
@@ -702,11 +718,13 @@ bool AiTrainer::runEvolution() {
             genSeeds[s] = rng.next64();
         }
 
-        // Chuẩn bị danh sách đối thủ kiểm tra: Baseline + Hall of Fame (tối đa 3 gần nhất)
+        // Chuẩn bị danh sách đối thủ kiểm tra: Baseline + Hall of Fame (tối đa 3 gần nhất, tránh trùng baseline)
         std::vector<AiParams> testOpponents;
         testOpponents.push_back(baselineParams);
         for (size_t h = (hallOfFame.size() > 3 ? hallOfFame.size() - 3 : 0); h < hallOfFame.size(); ++h) {
-            testOpponents.push_back(hallOfFame[h]);
+            if (hallOfFame[h] != baselineParams) {
+                testOpponents.push_back(hallOfFame[h]);
+            }
         }
 
         // Tạo danh sách Evaluation Tasks
@@ -1027,6 +1045,7 @@ bool AiTrainer::runEvolution() {
             m_bestMetadata.trainedMatches = totalMatchesRun;
             m_bestMetadata.algorithm = "evo";
             m_bestMetadata.timestamp = getIsoTimestamp();
+            m_bestMetadata.baselineProfile = m_config.baselineFile.empty() ? "defaults" : m_config.baselineFile;
 
             if (!m_config.outBestFile.empty()) {
                 if (saveTrainedAiProfile(m_config.outBestFile, m_bestParams, m_bestMetadata)) {
@@ -1111,7 +1130,7 @@ bool AiTrainer::runEvolution() {
 bool AiTrainer::runAdaptation() {
     mapgen::FastRng rng(m_config.masterSeed);
     AiParams currentCandidate = m_bestParams;
-    AiParams baselineParams{};
+    AiParams baselineParams = m_baselineParams;
 
     float allTimeBestFitness = -999999.0f;
     uint32_t totalMatchesRun = 0;
@@ -1231,6 +1250,7 @@ bool AiTrainer::runAdaptation() {
             m_bestMetadata.trainedMatches = totalMatchesRun;
             m_bestMetadata.algorithm = "adapt";
             m_bestMetadata.timestamp = getIsoTimestamp();
+            m_bestMetadata.baselineProfile = m_config.baselineFile.empty() ? "defaults" : m_config.baselineFile;
 
             if (!m_config.outBestFile.empty()) {
                 saveTrainedAiProfile(m_config.outBestFile, m_bestParams, m_bestMetadata);
@@ -1270,7 +1290,7 @@ bool AiTrainer::generateShowcaseReplay(const AiParams& championParams, uint64_t 
     gen.generate(map, seed, cfg);
     sim.spawnDivisions(seed);
 
-    AiParams baselineParams{};
+    AiParams baselineParams = m_baselineParams;
     TacticalAI aiChampion(sim::Faction::Player, seed ^ 0xAAAA5555ULL, championParams);
     TacticalAI aiBaseline(sim::Faction::Enemy, seed ^ 0x5555AAAAULL, baselineParams);
 

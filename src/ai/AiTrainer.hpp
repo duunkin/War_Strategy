@@ -126,6 +126,7 @@ struct TrainerConfig {
     float        mutationRateFinal{0.12f};   // Tỉ lệ đột biến cuối kỳ (annealing)
 
     std::string  resumeFile;           // Nạp profile AI đã huấn luyện trước đó
+    std::string  baselineFile;         // Nạp profile làm đối thủ chuẩn/baseline (M9.12, mặc định rỗng = AiParams{})
     std::string  outBestFile{"data/ai_best_params.json"}; // Đường dẫn lưu profile vô địch
     std::string  logCsvFile;           // Đường dẫn lưu file log CSV
     std::string  showcaseReplayFile;   // Đường dẫn lưu replay trận biểu diễn Champion vs Baseline
@@ -231,6 +232,7 @@ public:
     void requestStop();
 
     [[nodiscard]] const AiParams& getBestParams() const { return m_bestParams; }
+    [[nodiscard]] const AiParams& getBaselineParams() const { return m_baselineParams; }
     [[nodiscard]] const AiTrainingMetadata& getBestMetadata() const { return m_bestMetadata; }
     [[nodiscard]] bool isStopRequested() const { return m_stopRequested.load(); }
 
@@ -254,6 +256,7 @@ private:
 private:
     TrainerConfig       m_config;
     std::atomic<bool>   m_stopRequested{false};
+    AiParams            m_baselineParams;
     AiParams            m_bestParams;
     AiTrainingMetadata  m_bestMetadata;
     LiveTelemetryWatch  m_liveWatch;

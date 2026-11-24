@@ -74,6 +74,7 @@ void printHelp(const char* progName) {
               << "  --procs, --expected-procs <N> So tien trinh train du kien chay song song de tinh threads (Mac dinh: 1)\n"
               << "  --seed <uint64>              Master seed tat dinh cho toan bo qua trinh train (Mac dinh: 12345)\n"
               << "  --resume <file.json>         Tiep tuc huan luyen tu mot file profile AiParams da luu\n"
+              << "  --baseline <file.json>       Nap profile lam doi thu chuan/baseline (Mac dinh: AiParams{} mac dinh)\n"
               << "  --out-best <file.json>       Duong dan luu profile bo tham so manh nhat (Mac dinh: data/ai_best_params.json)\n"
               << "                               (Luu y: Bat buoc khac nhau khi chay nhieu tien trinh song song)\n"
               << "  --log <file.csv>             Ghi log CSV lich su chi tiet tung the he / chu ky (ghi noi neu file da ton tai)\n"
@@ -92,6 +93,21 @@ void printHelp(const char* progName) {
               << "========================================================================\n";
 }
 
+void printBaselineInfo(const std::string& baselinePath, const ai::AiParams& baselineParams) {
+    auto diffs = ai::getParamDiffsFromDefault(baselineParams);
+    std::cout << "  - Doi thu chuan (Baseline):   "
+              << (baselinePath.empty() ? "defaults (AiParams{})" : baselinePath) << "\n";
+    if (diffs.empty()) {
+        std::cout << "    * Tham so khac mac dinh:    (Khong co - 100% giong defaults)\n";
+    } else {
+        std::cout << "    * Tham so khac mac dinh (" << diffs.size() << " tham so):\n";
+        for (const auto& df : diffs) {
+            std::cout << "      - " << df.name << ": default = " << df.defaultValue
+                      << ", baseline = " << df.currentValue << "\n";
+        }
+    }
+}
+
 int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t numSeeds,
                       const ai::TrainerConfig& config, uint64_t seedBase) {
     if (!std::filesystem::exists(evalFile)) {
@@ -107,14 +123,20 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
     }
 
     ai::AiParams opponentParams{}; // Baseline AI
-    const std::string opponentName = "Baseline AI";
+    if (!config.baselineFile.empty()) {
+        if (!ai::loadTrainedAiProfile(config.baselineFile, opponentParams)) {
+            std::cerr << "[ERROR] Khong the nap baseline profile JSON: " << config.baselineFile << "\n";
+            return 1;
+        }
+    }
+    const std::string opponentName = config.baselineFile.empty() ? "Baseline AI (defaults)" : ("Baseline AI (" + config.baselineFile + ")");
 
     std::cout << "========================================================================\n"
               << "War Strategy - Danh Gia Profile Doc Lap (--eval-only)\n"
               << "========================================================================\n"
-              << "  - Profile can danh gia:       " << evalFile << "\n"
-              << "  - Doi thu doi dau:            " << opponentName << "\n"
-              << "  - So seed danh gia:           " << numSeeds << " (" << (numSeeds * 2) << " tran mirror)\n"
+              << "  - Profile can danh gia:       " << evalFile << "\n";
+    printBaselineInfo(config.baselineFile, opponentParams);
+    std::cout << "  - So seed danh gia:           " << numSeeds << " (" << (numSeeds * 2) << " tran mirror)\n"
               << "  - Max Ticks moi tran:         " << config.maxTicks << " (~" << (config.maxTicks / 20) << "s in-game)\n"
               << "  - So luong CPU:               " << config.threadCount << "\n"
               << "  - Master Seed danh gia:       " << config.masterSeed << "\n"
@@ -343,6 +365,8 @@ int main(int argc, char* argv[]) {
             config.masterSeed = std::stoull(argv[++i]);
         } else if (arg == "--resume" && i + 1 < argc) {
             config.resumeFile = argv[++i];
+        } else if (arg == "--baseline" && i + 1 < argc) {
+            config.baselineFile = argv[++i];
         } else if (arg == "--out-best" && i + 1 < argc) {
             config.outBestFile = argv[++i];
         } else if (arg == "--log" && i + 1 < argc) {
@@ -384,11 +408,20 @@ int main(int argc, char* argv[]) {
                   << "' da ton tai va khong co --resume! Khi chay song song, bat buoc dung --out-best khac nhau de tranh ghi de.\n";
     }
 
+    ai::AiParams baselineParams{};
+    if (!config.baselineFile.empty()) {
+        if (!ai::loadTrainedAiProfile(config.baselineFile, baselineParams)) {
+            std::cerr << "[CANH BAO] Khong the nap baseline profile: " << config.baselineFile
+                      << ", se dung mac dinh AiParams{}.\n";
+        }
+    }
+
     std::cout << "========================================================================\n"
               << "War Strategy - Module Huan Luyen AI Tu Hoc (Milestone 9)\n"
               << "========================================================================\n"
-              << "  - Mode:           " << ai::trainingModeToString(config.mode) << "\n"
-              << "  - Generations:    " << config.generations << "\n"
+              << "  - Mode:           " << ai::trainingModeToString(config.mode) << "\n";
+    printBaselineInfo(config.baselineFile, baselineParams);
+    std::cout << "  - Generations:    " << config.generations << "\n"
               << "  - Population:     " << config.populationSize << "\n"
               << "  - Seeds/Gen:      " << config.seedsPerGen << "\n"
               << "  - Validation Seeds:" << config.validationSeeds << "\n"

@@ -464,6 +464,7 @@ void testBestSelectionBasedOnValidation() {
     // Khang dinh diem luu trong metadata khop chinh xac voi validation fitness tinh toan doc lap
     assert(std::abs(savedMeta.fitness - expectedAvgFit) < 1e-3f);
     assert(std::abs(savedMeta.winRateVsBaseline - expectedWinRate) < 1e-3f);
+    assert(savedMeta.baselineProfile == "defaults");
 
     std::filesystem::remove(outBest);
     std::cout << "  -> PASSED: Best profile duoc luu da duoc kiem chung trung khop 100% voi ket qua Validation doc lap!\n";
@@ -593,6 +594,65 @@ static void testFactionBreakdownAndPairClassification() {
     std::cout << "  -> PASSED: Logic phan loai 2-0, 0-2, 1-1, Wilson CI va Sign Test hoat dong chinh xac!\n";
 }
 
+// =============================================================================
+// TEST 9: Baseline Profile Configuration and Propagation (M9.12)
+// =============================================================================
+void testBaselineProfileOptionAndPropagation() {
+    std::cout << "\n[TEST 9] Kiem tra tuy chon --baseline va su lan truyen baseline trong AI Trainer...\n";
+
+    // 1. Kiem tra tinh toan param diffs
+    ai::AiParams defParams{};
+    auto emptyDiffs = ai::getParamDiffsFromDefault(defParams);
+    assert(emptyDiffs.empty() && "Default params khong duoc co diffs");
+
+    ai::AiParams customBaseline{};
+    customBaseline.enableUnitRetreat = false;
+    customBaseline.scoutingWeight = 0.5f;
+    customBaseline.targetMemoryTicks = 200;
+
+    auto diffs = ai::getParamDiffsFromDefault(customBaseline);
+    assert(diffs.size() == 3);
+
+    // 2. Luu custom baseline ra file tam
+    const std::string baselineFile = "build/test_temp_baseline.json";
+    const std::string outBestFile = "build/test_temp_outbest.json";
+    std::filesystem::create_directories("build");
+
+    ai::AiTrainingMetadata baseMeta;
+    baseMeta.algorithm = "manual";
+    assert(ai::saveTrainedAiProfile(baselineFile, customBaseline, baseMeta));
+
+    // 3. Khoi tao trainer voi baselineFile
+    ai::TrainerConfig cfg;
+    cfg.mode = ai::TrainingMode::Evolution;
+    cfg.generations = 1;
+    cfg.populationSize = 2;
+    cfg.seedsPerGen = 1;
+    cfg.validationSeeds = 2;
+    cfg.maxTicks = 100;
+    cfg.threadCount = 1;
+    cfg.masterSeed = 42ULL;
+    cfg.baselineFile = baselineFile;
+    cfg.outBestFile = outBestFile;
+    cfg.quietOutput = true;
+
+    ai::AiTrainer trainer(cfg);
+    assert(trainer.getBaselineParams() == customBaseline);
+
+    bool ok = trainer.train();
+    assert(ok);
+    assert(std::filesystem::exists(outBestFile));
+
+    ai::AiParams outParams;
+    ai::AiTrainingMetadata outMeta;
+    assert(ai::loadTrainedAiProfile(outBestFile, outParams, &outMeta));
+    assert(outMeta.baselineProfile == baselineFile);
+
+    std::filesystem::remove(baselineFile);
+    std::filesystem::remove(outBestFile);
+    std::cout << "  -> PASSED: Baseline profile duoc nap, lan truyen va ghi nhan metadata chinh xac 100%!\n";
+}
+
 int main() {
     std::cout << "========================================================================\n"
               << "War Strategy - AI Self-Play & Trainer Unit Tests (M9)\n"
@@ -606,9 +666,10 @@ int main() {
     testBestSelectionBasedOnValidation();
     testDeadlockEarlyStopEquivalentToMaxTicks();
     testFactionBreakdownAndPairClassification();
+    testBaselineProfileOptionAndPropagation();
 
     std::cout << "\n========================================================================\n"
-              << "[PASS] TOAN BO 8/8 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
+              << "[PASS] TOAN BO 9/9 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
               << "========================================================================\n";
     return 0;
 }
