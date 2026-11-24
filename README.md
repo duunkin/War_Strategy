@@ -27,6 +27,15 @@ A modern real-time strategy (RTS) simulation engine and AI development framework
 > - Kể từ mốc M9.10, hệ thống chuyển sang giải quyết sát thương đồng thời (`Simultaneous Damage Resolution`) để triệt tiêu hoàn toàn thiên lệch phe do thứ tự thực thi ID đơn vị trong combat.
 > - Do sự thay đổi cốt lõi này trong việc thu thập và áp dụng sát thương tại cùng một tick, các tệp replay cũ được ghi lại trước M9.10 sẽ không còn đảm bảo phát lại giống hệt 100% khi chạy trên phiên bản hiện tại.
 
+> [!NOTE]
+> **Cờ Ablation M9.9 - M9.10 và Mức độ tương đương với M9.6**:
+> - Chế độ cờ ablation `"All OFF"` (`--ablate-all-off`) được thiết kế nhằm cô lập và tắt các cơ chế chiến thuật mới của Tactical AI được bổ sung từ M9.7 đến M9.9.
+> - Cần lưu ý rằng cấu hình **"All OFF" chỉ gần đúng M9.6** chứ không thể tái tạo 100% bit-exact trạng thái mô phỏng gốc của commit M9.6 (`b9d0aef`).
+> - Số liệu thực nghiệm đối soát tại **seed 7919, tick 4800** (quân số Blue / Red còn lại):
+>   - **M9.6 thật (`b9d0aef` thật + mapgen)**: **5669 / 6147**
+>   - **HEAD với "All OFF" (`--ablate-all-off`)**: **4550 / 7539**
+> - Sự chênh lệch này xuất phát từ các tinh chỉnh logic di chuyển, tuần tự cập nhật và giải quyết sát thương combat đồng thời. Do đó, cờ ablation là công cụ đo độ nhạy tương đối của từng cơ chế riêng rẽ, không phải bản sao nhị phân tuyệt đối của commit cũ.
+
 ---
 
 ## 3. Build & Test Instructions
