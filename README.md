@@ -22,6 +22,11 @@ A modern real-time strategy (RTS) simulation engine and AI development framework
 > - Sau khi hoàn thành cải tiến M9.5, các tham số này đã có tác dụng điều khiển hành vi thực sự (được kiểm chứng qua unit test và công cụ đo độ nhạy).
 > - Toàn bộ các file profile cũ đã được chuyển vào thư mục `data/old/` để lưu trữ đối sánh. Các tiến trình huấn luyện mới sẽ sinh hồ sơ tối ưu chuẩn hóa theo bộ tham số mới.
 
+> [!WARNING]
+> **Tương thích Replay (Kể từ M9.10)**:
+> - Kể từ mốc M9.10, hệ thống chuyển sang giải quyết sát thương đồng thời (`Simultaneous Damage Resolution`) để triệt tiêu hoàn toàn thiên lệch phe do thứ tự thực thi ID đơn vị trong combat.
+> - Do sự thay đổi cốt lõi này trong việc thu thập và áp dụng sát thương tại cùng một tick, các tệp replay cũ được ghi lại trước M9.10 sẽ không còn đảm bảo phát lại giống hệt 100% khi chạy trên phiên bản hiện tại.
+
 ---
 
 ## 3. Build & Test Instructions

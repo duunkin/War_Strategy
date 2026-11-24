@@ -447,6 +447,93 @@ void testSimulationDeterminism() {
     std::cout << "-> PASSED Muc 7: Cung seed chay hai lan khop tung bit!\n" << std::endl;
 }
 
+// =============================================================================
+// MỤC 8: Sát thương đồng thời (Simultaneous Damage Resolution) & Bất biến ID (M9.11)
+// =============================================================================
+void testSimultaneousDamageResolution(const sim::SimConfig& config) {
+    std::cout << "[TestCombat] [Muc 8] Kiem tra: Sat thuong dong thoi & bat bien thu tu ID..." << std::endl;
+
+    const auto* cfgInf = config.getUnitConfig(sim::UnitType::Infantry);
+    assert(cfgInf != nullptr);
+
+    // 1. Thử nghiệm với PlayerFirst (chế độ cũ trước M9.10): Đơn vị ID thấp bắn trước gây thiệt hại
+    {
+        sim::WorldMap map(128, 96, 32);
+        sim::WorldSim sim(map);
+        sim.loadConfig();
+        sim.setCombatOrderMode(sim::CombatOrderMode::PlayerFirst);
+
+        // Đặt 2 đơn vị bộ binh cạnh nhau trong tầm bắn (5 tiles)
+        // Unit 1 (Player, ID 1) tại (50, 50)
+        // Unit 2 (Enemy, ID 2) tại (50, 51)
+        sim.getUnits().emplace_back(1, sim::Faction::Player, sim::UnitType::Infantry, 50500, 50500, *cfgInf);
+        sim.getUnits().emplace_back(2, sim::Faction::Enemy, sim::UnitType::Infantry, 50500, 51500, *cfgInf);
+
+        sim.tick();
+
+        const auto& u1 = sim.getUnits()[0];
+        const auto& u2 = sim.getUnits()[1];
+
+        // Ở PlayerFirst: u1 bắn trước làm giảm quân số u2, nên u2 phản công yếu hơn -> u1 HP > u2 HP
+        std::cout << "  - PlayerFirst: Player HP=" << u1.getHp() << " (" << u1.getCurrentUnits() << " tr), Enemy HP="
+                  << u2.getHp() << " (" << u2.getCurrentUnits() << " tr)" << std::endl;
+        assert(u1.getHp() > u2.getHp());
+    }
+
+    // 2. Thử nghiệm với Simultaneous (M9.10+): Cả hai cùng gây sát thương đồng thời
+    int hpAfterSim1_Player = 0;
+    int hpAfterSim1_Enemy = 0;
+    {
+        sim::WorldMap map(128, 96, 32);
+        sim::WorldSim sim(map);
+        sim.loadConfig();
+        sim.setCombatOrderMode(sim::CombatOrderMode::Simultaneous);
+
+        // ID 1 Player, ID 2 Enemy
+        sim.getUnits().emplace_back(1, sim::Faction::Player, sim::UnitType::Infantry, 50500, 50500, *cfgInf);
+        sim.getUnits().emplace_back(2, sim::Faction::Enemy, sim::UnitType::Infantry, 50500, 51500, *cfgInf);
+
+        sim.tick();
+
+        const auto& u1 = sim.getUnits()[0];
+        const auto& u2 = sim.getUnits()[1];
+
+        std::cout << "  - Simultaneous (Player ID 1, Enemy ID 2): Player HP=" << u1.getHp() 
+                  << ", Enemy HP=" << u2.getHp() << std::endl;
+        assert(u1.getHp() == u2.getHp());
+        assert(u1.getCurrentUnits() == u2.getCurrentUnits());
+        hpAfterSim1_Player = u1.getHp();
+        hpAfterSim1_Enemy = u2.getHp();
+    }
+
+    // 3. Đổi ngược thứ tự ID: Enemy ID 1, Player ID 2
+    {
+        sim::WorldMap map(128, 96, 32);
+        sim::WorldSim sim(map);
+        sim.loadConfig();
+        sim.setCombatOrderMode(sim::CombatOrderMode::Simultaneous);
+
+        // ID 1 Enemy, ID 2 Player
+        sim.getUnits().emplace_back(1, sim::Faction::Enemy, sim::UnitType::Infantry, 50500, 51500, *cfgInf);
+        sim.getUnits().emplace_back(2, sim::Faction::Player, sim::UnitType::Infantry, 50500, 50500, *cfgInf);
+
+        sim.tick();
+
+        const auto* uEnemy = sim.getUnitById(1);
+        const auto* uPlayer = sim.getUnitById(2);
+        assert(uEnemy != nullptr && uPlayer != nullptr);
+
+        std::cout << "  - Simultaneous (Enemy ID 1, Player ID 2): Player HP=" << uPlayer->getHp() 
+                  << ", Enemy HP=" << uEnemy->getHp() << std::endl;
+        assert(uPlayer->getHp() == uEnemy->getHp());
+        assert(uPlayer->getCurrentUnits() == uEnemy->getCurrentUnits());
+        assert(uPlayer->getHp() == hpAfterSim1_Player);
+        assert(uEnemy->getHp() == hpAfterSim1_Enemy);
+    }
+
+    std::cout << "-> PASSED Muc 8: Sat thuong dong thoi & bat bien thu tu ID!\n" << std::endl;
+}
+
 int main() {
     std::cout << "==================================================" << std::endl;
     std::cout << "KIEM THU TOAN DIEN HE THONG CHIEN DAU M5" << std::endl;
@@ -467,9 +554,10 @@ int main() {
     testCommanderAndEliminationVictoryConditions();
     testTimeoutVictoryConditions();
     testSimulationDeterminism();
+    testSimultaneousDamageResolution(config);
 
     std::cout << "==================================================" << std::endl;
-    std::cout << "TAT CA 7 MUC TEST CHIEN DAU M5 DEU PASSED 100%!" << std::endl;
+    std::cout << "TAT CA 8 MUC TEST CHIEN DAU M5/M9 DEU PASSED 100%!" << std::endl;
     std::cout << "==================================================" << std::endl;
 
     return 0;
