@@ -3,7 +3,7 @@ import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-SEEDS = [7919, 15838, 23757, 31676, 39595, 47514, 55433, 63352]
+SEEDS = [7919 * i for i in range(1, 17)]
 EXE = "build/Release/War_Strategy_Headless.exe"
 
 CONFIGS = [
@@ -103,7 +103,7 @@ def main():
                 if is_unfrozen:
                     unfrozen_count += 1
 
-                if "Commander" in res["reason"] or "Elimination" in res["reason"]:
+                if "Tu lenh" in res["reason"] or "Commander" in res["reason"] or "Elimination" in res["reason"]:
                     cmd_dead_count += 1
 
                 if "AI1" in res["winner"] or "Blue" in res["winner"]:
@@ -117,8 +117,8 @@ def main():
                 details.append(f"{res['seed']}:{status_char}")
 
             win_str = f"{blue_wins}/{red_wins}/{draws}"
-            unfrozen_str = f"{unfrozen_count}/8"
-            cmd_dead_str = f"{cmd_dead_count}/8"
+            unfrozen_str = f"{unfrozen_count}/{len(SEEDS)}"
+            cmd_dead_str = f"{cmd_dead_count}/{len(SEEDS)}"
             print(f"{name:<25} | {unfrozen_str:<10} | {cmd_dead_str:<10} | {win_str:<15} | {' '.join(details)}")
 
 if __name__ == "__main__":
