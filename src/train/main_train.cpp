@@ -173,7 +173,7 @@ struct EvalMatchStats {
         checkMatch(pair.matchB);
     }
 
-    void print(const std::string& sectionTitle) const {
+    void print(const std::string& sectionTitle, bool allowPooledConclusion = true) const {
         float winrate = (totalMatches > 0) ? (static_cast<float>(candidateWins) / static_cast<float>(totalMatches)) : 0.0f;
         float winrateBlue = (candMatchesBlue > 0) ? (static_cast<float>(candWinsBlue) / static_cast<float>(candMatchesBlue)) : 0.0f;
         float winrateRed = (candMatchesRed > 0) ? (static_cast<float>(candWinsRed) / static_cast<float>(candMatchesRed)) : 0.0f;
@@ -213,17 +213,23 @@ struct EvalMatchStats {
                   << "  - Winrate:        " << std::setprecision(1) << (winrate * 100.0f) << "% ("
                   << candidateWins << "/" << totalMatches << " tran)\n"
                   << "  - Wilson CI 95%:  [" << std::setprecision(1) << (ci.lower * 100.0) << "%, "
-                  << std::setprecision(1) << (ci.upper * 100.0) << "%]\n"
-                  << "  - Sign Test (cap 2-0 vs 0-2): "
-                  << pairsSweep2_0 << " vs " << pairsSweep0_2
-                  << ", p-value = " << std::setprecision(4) << pValue << "\n";
+                  << std::setprecision(1) << (ci.upper * 100.0) << "%]\n";
 
-        if (pValue < 0.05 && ci.lower > 0.50) {
-            std::cout << "  >>> KET LUAN: TOT HON Baseline (p<0.05, CI lower > 50%)\n";
-        } else if (std::abs(winrate - 0.5f) < 0.001f && pairsSweep2_0 == pairsSweep0_2) {
-            std::cout << "  >>> KET LUAN: CAN BANG voi Baseline\n";
+        if (allowPooledConclusion) {
+            std::cout << "  - Sign Test (cap 2-0 vs 0-2): "
+                      << pairsSweep2_0 << " vs " << pairsSweep0_2
+                      << ", p-value = " << std::setprecision(4) << pValue << "\n";
+
+            if (pValue < 0.05 && ci.lower > 0.50) {
+                std::cout << "  >>> KET LUAN: TOT HON Baseline (p<0.05, CI lower > 50%)\n";
+            } else if (std::abs(winrate - 0.5f) < 0.001f && pairsSweep2_0 == pairsSweep0_2) {
+                std::cout << "  >>> KET LUAN: CAN BANG voi Baseline\n";
+            } else {
+                std::cout << "  >>> KET LUAN: CHUA KET LUAN (can them du lieu hoac p >= 0.05)\n";
+            }
         } else {
-            std::cout << "  >>> KET LUAN: CHUA KET LUAN (can them du lieu hoac p >= 0.05)\n";
+            std::cout << "  - Sign Test gop cap: [Bo qua ket luan do vi pham gia dinh doc lap giua ban do goc va lat]\n"
+                      << "  - Chu thich: Ban do goc va ban do lat dung chung seed nen khong doc lap; xem ket luan Sign Test theo SEED ben duoi.\n";
         }
         std::cout << "========================================================================\n";
     }
@@ -255,16 +261,17 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
     std::cout << "========================================================================\n"
               << "War Strategy - Danh Gia Profile Doc Lap (--eval-only)\n"
               << "========================================================================\n"
-              << "  - Profile can danh gia:       " << evalFile << "\n";
+              << "  - Duong dan profile:          " << evalFile << "\n"
+              << "  - Duong dan baseline:         " << (config.baselineFile.empty() ? "defaults" : config.baselineFile) << "\n";
     printBaselineInfo(config.baselineFile, opponentParams);
-    std::cout << "  - So seed danh gia:           " << numSeeds << " ("
+    std::cout << "  - Seed-base:                  " << seedBase << "\n"
+              << "  - So seed:                    " << numSeeds << " ("
               << (config.evalFlipMap ? (numSeeds * 4) : (numSeeds * 2)) << " tran "
               << (config.evalFlipMap ? "[Original + Flipped X]" : "[Mirror]") << ")\n"
-              << "  - Che do Lat Ban Do (--eval-flip-map): " << (config.evalFlipMap ? "BAT (x -> W-1-x)" : "TAT") << "\n"
+              << "  - Co flip-map:                " << (config.evalFlipMap ? "BAT (x -> W-1-x)" : "TAT") << "\n"
               << "  - Max Ticks moi tran:         " << config.maxTicks << " (~" << (config.maxTicks / 20) << "s in-game)\n"
               << "  - So luong CPU:               " << config.threadCount << "\n"
               << "  - Master Seed danh gia:       " << config.masterSeed << "\n"
-              << "  - Seed Base:                  " << seedBase << "\n"
               << "========================================================================\n"
               << "Dang tien hanh danh gia cac cap tran song song...\n" << std::flush;
 
@@ -352,7 +359,56 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
 
         statsOrig.print("KET QUA THEO BAN DO: [1] BAN DO GOC (ORIGINAL MAP)");
         statsFlip.print("KET QUA THEO BAN DO: [2] BAN DO LAT GUONG TRUC X (FLIPPED MAP)");
-        statsCombined.print("KET QUA TONG HOP (COMBINED - CA 2 BAN DO)");
+        statsCombined.print("KET QUA TONG HOP (COMBINED - CA 2 BAN DO)", /*allowPooledConclusion=*/false);
+
+        // Tong hop THEO SEED (gop 4 tran cua mot seed lam mot don vi doc lap - M9.14)
+        int seedCandidateWins = 0;
+        int seedOpponentWins  = 0;
+        int seedTies          = 0;
+
+        for (size_t i = 0; i < numSeeds; ++i) {
+            int cWins = resultsOrig[i].candidateWins + resultsFlip[i].candidateWins;
+            int oWins = resultsOrig[i].opponentWins + resultsFlip[i].opponentWins;
+            if (cWins > oWins) {
+                seedCandidateWins++;
+            } else if (oWins > cWins) {
+                seedOpponentWins++;
+            } else {
+                seedTies++;
+            }
+        }
+
+        double pValSeed = ai::pairedSignTestPValue(seedCandidateWins, seedOpponentWins);
+
+        std::cout << "\n========================================================================\n"
+                  << "KET QUA TONG HOP THEO SEED (GOP 4 TRAN / SEED - DON VI THONG KE DOC LAP)\n"
+                  << "========================================================================\n"
+                  << "  - Tong so seed danh gia:      " << numSeeds << " seeds (4 tran / seed = " << (numSeeds * 4) << " tran)\n"
+                  << "  - Phan bo ket qua theo Seed:\n"
+                  << "    * Seed Candidate thang hon (cWins > oWins): " << seedCandidateWins << " (" 
+                  << std::fixed << std::setprecision(1) << (numSeeds > 0 ? (seedCandidateWins * 100.0f / numSeeds) : 0.0f) << "%)\n"
+                  << "    * Seed Baseline thang hon  (oWins > cWins): " << seedOpponentWins << " (" 
+                  << std::fixed << std::setprecision(1) << (numSeeds > 0 ? (seedOpponentWins * 100.0f / numSeeds) : 0.0f) << "%)\n"
+                  << "    * Seed Hoa                 (cWins == oWins): " << seedTies << " (" 
+                  << std::fixed << std::setprecision(1) << (numSeeds > 0 ? (seedTies * 100.0f / numSeeds) : 0.0f) << "%)\n"
+                  << "------------------------------------------------------------------------\n"
+                  << "  THONG KE THEO SEED (M9.14):\n"
+                  << "  - Sign Test theo Seed (Thang vs Thua): " << seedCandidateWins << " vs " << seedOpponentWins
+                  << ", p-value = " << std::setprecision(4) << pValSeed << "\n";
+
+        if (pValSeed < 0.05 && seedCandidateWins > seedOpponentWins) {
+            std::cout << "  >>> KET LUAN THEO SEED: TOT HON Baseline (p_seed < 0.05, " << seedCandidateWins << " vs " << seedOpponentWins << " seeds)\n";
+        } else if (pValSeed < 0.05 && seedOpponentWins > seedCandidateWins) {
+            std::cout << "  >>> KET LUAN THEO SEED: KEM HON Baseline (p_seed < 0.05, " << seedCandidateWins << " vs " << seedOpponentWins << " seeds)\n";
+        } else if (seedCandidateWins == seedOpponentWins) {
+            std::cout << "  >>> KET LUAN THEO SEED: CAN BANG voi Baseline (" << seedCandidateWins << " vs " << seedOpponentWins << " seeds)\n";
+        } else {
+            std::cout << "  >>> KET LUAN THEO SEED: CHUA KET LUAN (p_seed >= 0.05, can them seed de khang dinh)\n";
+        }
+
+        std::cout << "  - Chú thích: Bản đồ gốc và bản đồ lật dùng chung seed nên không độc lập;\n"
+                  << "    kết luận thống kê chuẩn xác cần dựa trên đơn vị Seed (gom 4 trận / seed).\n"
+                  << "========================================================================\n";
     } else {
         statsOrig.print("KET QUA DANH GIA PROFILE VS BASELINE");
     }

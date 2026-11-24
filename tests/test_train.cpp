@@ -608,7 +608,28 @@ static void testFactionBreakdownAndPairClassification() {
     // n=10, k=2: 2 * (1 + 10 + 45) / 1024 = 0.109375
     assert(std::abs(pVal8_2 - 0.109375) < 1e-4);
 
-    std::cout << "  -> PASSED: Logic phan loai 2-0, 0-2, 1-1, Wilson CI va Sign Test hoat dong chinh xac!\n";
+    // Kiem tra logic tong hop theo seed (4 tran / seed - M9.14)
+    std::vector<std::pair<MirrorPairResult, MirrorPairResult>> seedMatches = {
+        {p3, p1}, // Seed 1: Cand 3 vs Opp 1 -> Cand thang seed
+        {p4, p2}, // Seed 2: Cand 1 vs Opp 3 -> Opp thang seed
+        {p1, p2}, // Seed 3: Cand 2 vs Opp 2 -> Hoa seed
+        {p3, p3}  // Seed 4: Cand 4 vs Opp 0 -> Cand thang seed
+    };
+    int sCandWins = 0, sOppWins = 0, sTies = 0;
+    for (const auto& sm : seedMatches) {
+        int c = sm.first.candidateWins + sm.second.candidateWins;
+        int o = sm.first.opponentWins + sm.second.opponentWins;
+        if (c > o) sCandWins++;
+        else if (o > c) sOppWins++;
+        else sTies++;
+    }
+    assert(sCandWins == 2);
+    assert(sOppWins == 1);
+    assert(sTies == 1);
+    double pValSeed = ai::pairedSignTestPValue(sCandWins, sOppWins);
+    assert(pValSeed > 0.05); // n=3 (2 vs 1) -> p = 1.0
+
+    std::cout << "  -> PASSED: Logic phan loai 2-0, 0-2, 1-1, Wilson CI, Sign Test va Tong hop theo Seed hoat dong chinh xac!\n";
 }
 
 // =============================================================================
