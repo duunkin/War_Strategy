@@ -1,3 +1,8 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "replay/Replay.hpp"
 #include "ai/TacticalAI.hpp"
 #include "ai/AiParams.hpp"
@@ -7,7 +12,6 @@
 #include "sim/units/Unit.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <vector>
 #include <string>
 #include <fstream>

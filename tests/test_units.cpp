@@ -1,3 +1,8 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "sim/config/SimConfig.hpp"
 #include "sim/map/WorldMap.hpp"
 #include "sim/units/Unit.hpp"
@@ -6,7 +11,6 @@
 #include "mapgen/MapGenConfig.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <cmath>
 #include <unordered_set>
 

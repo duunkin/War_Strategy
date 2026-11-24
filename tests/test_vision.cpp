@@ -1,3 +1,8 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "sim/WorldSim.hpp"
 #include "sim/vision/VisionSystem.hpp"
 #include "sim/combat/CombatSystem.hpp"
@@ -6,7 +11,6 @@
 #include "sim/map/WorldMap.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <vector>
 #include <cstring>
 #include <cmath>

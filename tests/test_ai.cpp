@@ -1,3 +1,8 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "ai/TacticalAI.hpp"
 #include "ai/AiParams.hpp"
 #include "sim/WorldSim.hpp"
@@ -6,7 +11,6 @@
 #include "sim/units/Unit.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <vector>
 #include <string>
 

@@ -1,9 +1,13 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "sim/config/SimConfig.hpp"
 #include "sim/map/WorldMap.hpp"
 #include "sim/pathfinding/Pathfinder.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <vector>
 
 int main() {

@@ -1,3 +1,8 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "ai/AiTrainer.hpp"
 #include "ai/AiParams.hpp"
 #include "ai/AiTelemetry.hpp"
@@ -9,7 +14,6 @@
 #include "mapgen/MapGenConfig.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
