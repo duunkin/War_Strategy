@@ -162,6 +162,19 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
     int timeoutMatches = 0;
     float totalFitnessSum = 0.0f;
 
+    // Phân tích chi tiết theo phe và độ nén cặp trận (M9.10 Item 4)
+    int candMatchesBlue = 0;
+    int candWinsBlue = 0;
+    int candMatchesRed = 0;
+    int candWinsRed = 0;
+
+    int pairsSweep2_0 = 0;         // Candidate thắng cả 2 trận (2-0 sweep)
+    int pairsSweep0_2 = 0;         // Baseline thắng cả 2 trận (0-2 sweep)
+    int pairsSplit1_1 = 0;         // Hòa cặp 1-1 (cả 2 trận cùng thuộc về phe)
+    int pairsSplit1_1_BlueBoth = 0; // Cả 2 trận đều do Blue thắng
+    int pairsSplit1_1_RedBoth  = 0; // Cả 2 trận đều do Red thắng
+    int pairsOther = 0;            // Cặp có trận hòa (draw)
+
     for (size_t i = 0; i < nextTask.load() && i < numSeeds; ++i) {
         const auto& pair = results[i];
         if (pair.seed == 0 && pair.matchA.finalTick == 0) continue; // Task chua chay
@@ -170,6 +183,29 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
         opponentWins += pair.opponentWins;
         draws += pair.draws;
         totalFitnessSum += pair.totalFitness;
+
+        // Theo dõi theo phe (MatchA: Candidate Blue; MatchB: Candidate Red)
+        candMatchesBlue++;
+        if (pair.matchA.isWin) candWinsBlue++;
+
+        candMatchesRed++;
+        if (pair.matchB.isWin) candWinsRed++;
+
+        // Phân loại kết quả cặp seed
+        if (pair.candidateWins == 2) {
+            pairsSweep2_0++;
+        } else if (pair.opponentWins == 2) {
+            pairsSweep0_2++;
+        } else if (pair.candidateWins == 1 && pair.opponentWins == 1) {
+            pairsSplit1_1++;
+            if (pair.matchA.isWin && pair.matchB.isLoss) {
+                pairsSplit1_1_BlueBoth++;
+            } else if (pair.matchA.isLoss && pair.matchB.isWin) {
+                pairsSplit1_1_RedBoth++;
+            }
+        } else {
+            pairsOther++;
+        }
 
         auto checkMatch = [&](const ai::SingleMatchResult& m) {
             if (m.didCandidateCommanderDie()) candidateCmdDeaths++;
@@ -186,14 +222,31 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
     }
 
     float winrate = (totalMatches > 0) ? (static_cast<float>(candidateWins) / static_cast<float>(totalMatches)) : 0.0f;
+    float winrateBlue = (candMatchesBlue > 0) ? (static_cast<float>(candWinsBlue) / static_cast<float>(candMatchesBlue)) : 0.0f;
+    float winrateRed = (candMatchesRed > 0) ? (static_cast<float>(candWinsRed) / static_cast<float>(candMatchesRed)) : 0.0f;
     float avgFit = (totalMatches > 0) ? (totalFitnessSum / static_cast<float>(totalMatches / 2)) : 0.0f;
+    int totalPairs = totalMatches / 2;
 
     std::cout << "\n========================================================================\n"
               << "KET QUA DANH GIA PROFILE VS BASELINE\n"
               << "========================================================================\n"
-              << "  - Tong so tran mirror:        " << totalMatches << " (" << (totalMatches / 2) << " seeds)\n"
+              << "  - Tong so tran mirror:        " << totalMatches << " (" << totalPairs << " seeds)\n"
               << "  - Ket qua (Thang - Thua - Hoa): " << candidateWins << " - " << opponentWins << " - " << draws << "\n"
-              << "  - Ty le thang (Winrate):      " << std::fixed << std::setprecision(1) << (winrate * 100.0f) << "%\n"
+              << "  - Ty le thang tong (Mirror):  " << std::fixed << std::setprecision(1) << (winrate * 100.0f) << "%\n"
+              << "------------------------------------------------------------------------\n"
+              << "  - Winrate khi Candidate la Blue: " << std::setprecision(1) << (winrateBlue * 100.0f) << "% (" << candWinsBlue << "/" << candMatchesBlue << ")\n"
+              << "  - Winrate khi Candidate la Red : " << std::setprecision(1) << (winrateRed * 100.0f) << "% (" << candWinsRed << "/" << candMatchesRed << ")\n"
+              << "------------------------------------------------------------------------\n"
+              << "  - Do nen phep do (Phan bo ket qua theo cap Seed):\n"
+              << "    * Cap 2-0 (Candidate sweep thang ca 2 tran): " << pairsSweep2_0 << " (" << (totalPairs > 0 ? (pairsSweep2_0 * 100.0f / totalPairs) : 0.0f) << "%)\n"
+              << "    * Cap 0-2 (Baseline sweep thang ca 2 tran):  " << pairsSweep0_2 << " (" << (totalPairs > 0 ? (pairsSweep0_2 * 100.0f / totalPairs) : 0.0f) << "%)\n"
+              << "    * Cap 1-1 (Hai tran cung thuoc ve 1 phe):   " << pairsSplit1_1 << " (" << (totalPairs > 0 ? (pairsSplit1_1 * 100.0f / totalPairs) : 0.0f) << "%)\n"
+              << "      + Trong do Blue thang ca 2 tran:          " << pairsSplit1_1_BlueBoth << "\n"
+              << "      + Trong do Red thang ca 2 tran:           " << pairsSplit1_1_RedBoth << "\n";
+    if (pairsOther > 0) {
+        std::cout << "    * Cap co ket qua hoa:                       " << pairsOther << " (" << (pairsOther * 100.0f / totalPairs) << "%)\n";
+    }
+    std::cout << "------------------------------------------------------------------------\n"
               << "  - Tu lenh Candidate chet:     " << candidateCmdDeaths << " / " << totalMatches << " tran\n"
               << "  - Tu lenh Baseline chet:      " << opponentCmdDeaths << " / " << totalMatches << " tran\n"
               << "  - Tran ket thuc do het gio:   " << timeoutMatches << " / " << totalMatches << " tran\n"

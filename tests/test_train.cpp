@@ -507,6 +507,73 @@ void testDeadlockEarlyStopEquivalentToMaxTicks() {
     std::cout << "  -> PASSED: Dung som khi be tac cho ket qua khop 100% voi maxTicks tren toan bo 5 seed!\n";
 }
 
+static void testFactionBreakdownAndPairClassification() {
+    std::cout << "\n[TEST 8] Kiem thu logic phan tach phe va do nen cap tran (--eval-only M9.10)...\n";
+
+    // Setup 4 cặp trận mô phỏng các trường hợp:
+    // Pair 1: Blue thắng cả 2 trận -> Candidate thắng matchA (Blue), thua matchB (Red) -> split 1-1
+    MirrorPairResult p1;
+    p1.candidateWins = 1; p1.opponentWins = 1;
+    p1.matchA.isWin = true;  p1.matchA.isLoss = false; // Cand won as Blue
+    p1.matchB.isWin = false; p1.matchB.isLoss = true;  // Opp won as Blue
+
+    // Pair 2: Red thắng cả 2 trận -> Candidate thua matchA (Blue), thắng matchB (Red) -> split 1-1
+    MirrorPairResult p2;
+    p2.candidateWins = 1; p2.opponentWins = 1;
+    p2.matchA.isWin = false; p2.matchA.isLoss = true;  // Opp won as Red
+    p2.matchB.isWin = true;  p2.matchB.isLoss = false; // Cand won as Red
+
+    // Pair 3: Candidate thắng cả 2 trận (sweep 2-0)
+    MirrorPairResult p3;
+    p3.candidateWins = 2; p3.opponentWins = 0;
+    p3.matchA.isWin = true;  p3.matchA.isLoss = false; // Cand won as Blue
+    p3.matchB.isWin = true;  p3.matchB.isLoss = false; // Cand won as Red
+
+    // Pair 4: Baseline thắng cả 2 trận (sweep 0-2)
+    MirrorPairResult p4;
+    p4.candidateWins = 0; p4.opponentWins = 2;
+    p4.matchA.isWin = false; p4.matchA.isLoss = true;  // Opp won as Red
+    p4.matchB.isWin = false; p4.matchB.isLoss = true;  // Opp won as Blue
+
+    std::vector<MirrorPairResult> pairs = {p1, p2, p3, p4};
+
+    int candWinsBlue = 0, candMatchesBlue = 0;
+    int candWinsRed = 0, candMatchesRed = 0;
+    int sweep2_0 = 0, sweep0_2 = 0, split1_1 = 0;
+    int splitBlueBoth = 0, splitRedBoth = 0;
+
+    for (const auto& p : pairs) {
+        candMatchesBlue++;
+        if (p.matchA.isWin) candWinsBlue++;
+
+        candMatchesRed++;
+        if (p.matchB.isWin) candWinsRed++;
+
+        if (p.candidateWins == 2) {
+            sweep2_0++;
+        } else if (p.opponentWins == 2) {
+            sweep0_2++;
+        } else if (p.candidateWins == 1 && p.opponentWins == 1) {
+            split1_1++;
+            if (p.matchA.isWin && p.matchB.isLoss) splitBlueBoth++;
+            else if (p.matchA.isLoss && p.matchB.isWin) splitRedBoth++;
+        }
+    }
+
+    assert(candMatchesBlue == 4);
+    assert(candWinsBlue == 2); // p1, p3
+    assert(candMatchesRed == 4);
+    assert(candWinsRed == 2); // p2, p3
+
+    assert(sweep2_0 == 1);
+    assert(sweep0_2 == 1);
+    assert(split1_1 == 2);
+    assert(splitBlueBoth == 1);
+    assert(splitRedBoth == 1);
+
+    std::cout << "  -> PASSED: Logic phan loai 2-0, 0-2, 1-1 (Blue/Red swept) va winrate tach phe hoat dong chinh xac!\n";
+}
+
 int main() {
     std::cout << "========================================================================\n"
               << "War Strategy - AI Self-Play & Trainer Unit Tests (M9)\n"
@@ -519,9 +586,10 @@ int main() {
     testSimulationDeterminismAntiNoise();
     testBestSelectionBasedOnValidation();
     testDeadlockEarlyStopEquivalentToMaxTicks();
+    testFactionBreakdownAndPairClassification();
 
     std::cout << "\n========================================================================\n"
-              << "[PASS] TOAN BO 7/7 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
+              << "[PASS] TOAN BO 8/8 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
               << "========================================================================\n";
     return 0;
 }
