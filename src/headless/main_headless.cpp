@@ -225,6 +225,7 @@ int main(int argc, char* argv[]) {
             opt.liveOutput = false;
             opt.scrollOutput = false;
             explicitDisplayMode = true;
+            sim::WorldSim::setGlobalQuiet(true);
         } else if (arg == "--log" && i + 1 < argc) {
             opt.logCsvFile = argv[++i];
         } else if (arg == "--save-replay" && i + 1 < argc) {

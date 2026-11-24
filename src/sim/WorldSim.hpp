@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <string>
 #include <functional>
+#include <atomic>
 
 namespace sim {
 
@@ -51,6 +52,12 @@ public:
     // Hook lắng nghe các lệnh được gửi vào WorldSim (cho ReplayRecorder)
     using CommandHook = std::function<void(uint64_t tick, const Command& cmd)>;
     void setCommandHook(CommandHook hook) { m_commandHook = std::move(hook); }
+
+    // Chế độ im lặng (không in log sinh quân WorldSim ra stdout)
+    void setQuiet(bool q) { m_quiet = q; }
+    [[nodiscard]] bool isQuiet() const { return m_quiet; }
+    static void setGlobalQuiet(bool q) { s_globalQuiet.store(q); }
+    static bool isGlobalQuiet() { return s_globalQuiet.load(); }
 
     // Thực hiện 1 bước mô phỏng cố định (1 tick)
     void tick();
@@ -142,6 +149,9 @@ private:
     std::vector<uint32_t> m_aliveIdsScratch;
     double               m_lastVisionUpdateTimeMs{0.0};
     CombatOrderMode      m_combatOrderMode{CombatOrderMode::Simultaneous};
+
+    bool                 m_quiet{false};
+    static inline std::atomic<bool> s_globalQuiet{false};
 };
 
 } // namespace sim

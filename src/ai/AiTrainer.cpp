@@ -265,6 +265,7 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
 
     sim::WorldMap map(128, 96, 32);
     sim::WorldSim sim(map);
+    sim.setQuiet(true);
     if (!sim.loadConfig()) {
         res.endReason = "Config load failed";
         return res;
@@ -494,6 +495,10 @@ MirrorPairResult evaluatePair(const AiParams& candidate,
 AiTrainer::AiTrainer(const TrainerConfig& config)
     : m_config(config)
 {
+    if (m_config.quietOutput) {
+        sim::WorldSim::setGlobalQuiet(true);
+    }
+
     // Giới hạn biên an toàn cho số luồng
     if (m_config.threadCount == 0) {
         m_config.threadCount = std::max(1u, std::thread::hardware_concurrency());
@@ -1298,6 +1303,7 @@ bool AiTrainer::runAdaptation() {
 bool AiTrainer::generateShowcaseReplay(const AiParams& championParams, uint64_t seed) {
     sim::WorldMap map(128, 96, 32);
     sim::WorldSim sim(map);
+    sim.setQuiet(true);
     if (!sim.loadConfig()) return false;
 
     mapgen::MapGenConfig cfg;

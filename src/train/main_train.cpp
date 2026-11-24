@@ -492,6 +492,7 @@ int main(int argc, char* argv[]) {
             config.liveOutput = false;
             config.scrollOutput = false;
             config.quietOutput = true;
+            sim::WorldSim::setGlobalQuiet(true);
         } else {
             std::cerr << "[War_Strategy_Train] Khong nhan dien duoc tuy chon: " << arg << " (dung --help de xem)\n";
             return 1;

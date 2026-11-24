@@ -370,8 +370,10 @@ void WorldSim::spawnDivisions(uint64_t seed) {
         m_units.emplace_back(nextId++, Faction::Enemy, t, milliX, milliY, *cfg);
     }
 
-    std::cout << "[WorldSim] Da sinh thanh cong " << m_units.size() << " don vi ("
-              << roster.size() << " Player phia Tay, " << roster.size() << " Enemy phia Dong doi xung) tu seed " << seed << std::endl;
+    if (!m_quiet && !s_globalQuiet.load()) {
+        std::cout << "[WorldSim] Da sinh thanh cong " << m_units.size() << " don vi ("
+                  << roster.size() << " Player phia Tay, " << roster.size() << " Enemy phia Dong doi xung) tu seed " << seed << std::endl;
+    }
 
     // Khởi tạo và cập nhật sương mù chiến tranh ban đầu ở tick 0 (M6)
     size_t mapSize = static_cast<size_t>(m_map.getWidth() * m_map.getHeight());

@@ -4,8 +4,18 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include <mutex>
+#include <unordered_map>
 
 namespace sim {
+
+static std::mutex g_configCacheMutex;
+static std::unordered_map<std::string, SimConfig> g_configCache;
+
+void SimConfig::clearCache() {
+    std::lock_guard<std::mutex> lock(g_configCacheMutex);
+    g_configCache.clear();
+}
 
 static bool fileExists(const std::string& path) {
     FILE* f = std::fopen(path.c_str(), "rb");
@@ -63,6 +73,13 @@ static UnitDomain parseDomain(const std::string& domainStr) {
 }
 
 bool SimConfig::loadFromFile(const std::string& filePath) {
+    std::lock_guard<std::mutex> lock(g_configCacheMutex);
+    auto it = g_configCache.find(filePath);
+    if (it != g_configCache.end()) {
+        *this = it->second;
+        return true;
+    }
+
     std::string content;
     if (!readFileToString(filePath, content)) {
         std::cerr << "[SimConfig] LOI: Khong the mo file cau hinh '" << filePath << "'!" << std::endl;
@@ -201,6 +218,8 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
               << "  Scale: 1 o = " << m_scale.tileMeters << " m, "
               << m_scale.tilePixels << " px, ban do " << m_scale.mapWidth << "x" << m_scale.mapHeight
               << ", tickRate " << m_scale.tickRate << " tps" << std::endl;
+
+    g_configCache[filePath] = *this;
     return true;
 }
 
