@@ -9,6 +9,8 @@
 #include <thread>
 #include <filesystem>
 #include <atomic>
+#include <cmath>
+#include <algorithm>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -83,13 +85,15 @@ void printHelp(const char* progName) {
               << "Options Danh Gia Doc Lap (--eval-only):\n"
               << "  --eval-only <file.json>      Chi danh gia 1 profile AI tren tap seed moi (khong train)\n"
               << "  --vs-baseline                Danh gia profile doi dau voi Baseline AI (dung kem --eval-only)\n"
-              << "  --seeds <N>                  So seed mirror danh gia trong --eval-only (Mac dinh: 8)\n\n"
+              << "  --seeds <N>                  So seed mirror danh gia trong --eval-only (Mac dinh: 8)\n"
+              << "  --seed-base <N>              Gia tri goc de tinh dai seed danh gia (Mac dinh: 0)\n\n"
               << "Tro Giup:\n"
               << "  --help, -h                   Hien thi huong dan su dung nay\n"
               << "========================================================================\n";
 }
 
-int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t numSeeds, const ai::TrainerConfig& config) {
+int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t numSeeds,
+                      const ai::TrainerConfig& config, uint64_t seedBase) {
     if (!std::filesystem::exists(evalFile)) {
         std::cerr << "[ERROR] File profile khong ton tai: " << evalFile << "\n";
         return 1;
@@ -114,10 +118,18 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
               << "  - Max Ticks moi tran:         " << config.maxTicks << " (~" << (config.maxTicks / 20) << "s in-game)\n"
               << "  - So luong CPU:               " << config.threadCount << "\n"
               << "  - Master Seed danh gia:       " << config.masterSeed << "\n"
+              << "  - Seed Base:                  " << seedBase << "\n"
               << "========================================================================\n"
               << "Dang tien hanh danh gia cac cap tran Mirror song song...\n" << std::flush;
 
-    mapgen::FastRng rng(config.masterSeed ^ 0xBA5E114E5EEDULL);
+    // Metadata profile
+    std::cout << "  [Profile Metadata] generation=" << evalMeta.generation
+              << ", fitness=" << std::setprecision(1) << evalMeta.fitness
+              << ", winRateVsBaseline=" << evalMeta.winRateVsBaseline
+              << ", algorithm=" << evalMeta.algorithm
+              << ", timestamp=" << evalMeta.timestamp << "\n" << std::flush;
+
+    mapgen::FastRng rng((config.masterSeed ^ 0xBA5E114E5EEDULL) + seedBase);
     std::vector<uint64_t> evalSeeds(numSeeds);
     for (uint32_t s = 0; s < numSeeds; ++s) {
         evalSeeds[s] = rng.next64();
@@ -253,13 +265,29 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
               << "  - Fitness trung binh moi seed: " << std::setprecision(1) << avgFit << "\n"
               << "========================================================================\n";
 
-    if (winrate > 0.5f) {
-        std::cout << ">>> XAC NHAN: Profile AI (" << (winrate * 100.0f) << "% winrate) THUC SU TOT HON Baseline AI!\n\n";
-    } else if (winrate == 0.5f) {
-        std::cout << ">>> XAC NHAN: Profile AI (" << (winrate * 100.0f) << "% winrate) CAN BANG voi Baseline AI.\n\n";
+    // --- Thống kê chặt chẽ (M9.11) ---
+    ai::WilsonCI ci = ai::wilsonScoreInterval(candidateWins, totalMatches);
+    double pValue = ai::pairedSignTestPValue(pairsSweep2_0, pairsSweep0_2);
+
+    std::cout << "------------------------------------------------------------------------\n"
+              << "  THONG KE (M9.11):\n"
+              << "  - Winrate:        " << std::setprecision(1) << (winrate * 100.0f) << "% ("
+              << candidateWins << "/" << totalMatches << " tran)\n"
+              << "  - Wilson CI 95%:  [" << std::setprecision(1) << (ci.lower * 100.0) << "%, "
+              << std::setprecision(1) << (ci.upper * 100.0) << "%]\n"
+              << "  - Sign Test (cap 2-0 vs 0-2): "
+              << pairsSweep2_0 << " vs " << pairsSweep0_2
+              << ", p-value = " << std::setprecision(4) << pValue << "\n";
+
+    // Kết luận chỉ dựa trên thống kê chặt chẽ
+    if (pValue < 0.05 && ci.lower > 0.50) {
+        std::cout << "  >>> KET LUAN: TOT HON Baseline (p<0.05, CI lower > 50%)\n";
+    } else if (std::abs(winrate - 0.5f) < 0.001f && pairsSweep2_0 == pairsSweep0_2) {
+        std::cout << "  >>> KET LUAN: CAN BANG voi Baseline\n";
     } else {
-        std::cout << ">>> XAC NHAN: Profile AI (" << (winrate * 100.0f) << "% winrate) CHUA TOT HON Baseline AI.\n\n";
+        std::cout << "  >>> KET LUAN: CHUA KET LUAN (can them du lieu hoac p >= 0.05)\n";
     }
+    std::cout << "========================================================================\n\n";
 
     return 0;
 }
@@ -276,6 +304,7 @@ int main(int argc, char* argv[]) {
     std::string evalOnlyFile;
     bool vsBaseline = false;
     uint32_t evalSeedCount = 8;
+    uint64_t seedBase = 0;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -289,6 +318,8 @@ int main(int argc, char* argv[]) {
             vsBaseline = true;
         } else if (arg == "--seeds" && i + 1 < argc) {
             evalSeedCount = static_cast<uint32_t>(std::stoul(argv[++i]));
+        } else if (arg == "--seed-base" && i + 1 < argc) {
+            seedBase = std::stoull(argv[++i]);
         } else if (arg == "--mode" && i + 1 < argc) {
             config.mode = ai::stringToTrainingMode(argv[++i]);
         } else if (arg == "--generations" && i + 1 < argc) {
@@ -345,7 +376,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (!evalOnlyFile.empty()) {
-        return runEvaluationOnly(evalOnlyFile, vsBaseline, evalSeedCount, config);
+        return runEvaluationOnly(evalOnlyFile, vsBaseline, evalSeedCount, config, seedBase);
     }
 
     if (std::filesystem::exists(config.outBestFile) && config.resumeFile.empty()) {

@@ -571,7 +571,26 @@ static void testFactionBreakdownAndPairClassification() {
     assert(splitBlueBoth == 1);
     assert(splitRedBoth == 1);
 
-    std::cout << "  -> PASSED: Logic phan loai 2-0, 0-2, 1-1 (Blue/Red swept) va winrate tach phe hoat dong chinh xac!\n";
+    // Kiem tra Wilson CI va Sign Test (M9.11)
+    ai::WilsonCI ci50 = ai::wilsonScoreInterval(50, 100);
+    assert(ci50.lower > 0.39 && ci50.lower < 0.41);
+    assert(ci50.upper > 0.59 && ci50.upper < 0.61);
+
+    ai::WilsonCI ci100 = ai::wilsonScoreInterval(100, 100);
+    assert(ci100.upper == 1.0);
+    assert(ci100.lower > 0.95);
+
+    double pValEqual = ai::pairedSignTestPValue(5, 5);
+    assert(std::abs(pValEqual - 1.0) < 1e-5);
+
+    double pValSweep10_0 = ai::pairedSignTestPValue(10, 0);
+    assert(pValSweep10_0 < 0.01);
+
+    double pVal8_2 = ai::pairedSignTestPValue(8, 2);
+    // n=10, k=2: 2 * (1 + 10 + 45) / 1024 = 0.109375
+    assert(std::abs(pVal8_2 - 0.109375) < 1e-4);
+
+    std::cout << "  -> PASSED: Logic phan loai 2-0, 0-2, 1-1, Wilson CI va Sign Test hoat dong chinh xac!\n";
 }
 
 int main() {

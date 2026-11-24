@@ -8,6 +8,8 @@
 #include <vector>
 #include <fstream>
 #include <filesystem>
+#include <cmath>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 
 namespace ai {
@@ -209,6 +211,45 @@ inline bool loadTrainedAiProfile(const std::string& filepath, AiParams& outParam
     } catch (...) {
         return false;
     }
+}
+
+// =============================================================================
+// Thống kê đánh giá (M9.11)
+// =============================================================================
+struct WilsonCI {
+    double lower{0.0};
+    double upper{0.0};
+};
+
+inline WilsonCI wilsonScoreInterval(int successes, int total) {
+    if (total <= 0) return {0.0, 0.0};
+    const double z = 1.96;
+    const double n = static_cast<double>(total);
+    const double p = static_cast<double>(successes) / n;
+    const double z2 = z * z;
+    const double denom = 1.0 + z2 / n;
+    const double centre = p + z2 / (2.0 * n);
+    const double spread = z * std::sqrt((p * (1.0 - p) + z2 / (4.0 * n)) / n);
+    return {
+        std::max(0.0, (centre - spread) / denom),
+        std::min(1.0, (centre + spread) / denom)
+    };
+}
+
+inline double pairedSignTestPValue(int sweep2_0, int sweep0_2) {
+    int n = sweep2_0 + sweep0_2;
+    if (n <= 0) return 1.0;
+    int k = std::min(sweep2_0, sweep0_2);
+    double cdf = 0.0;
+    double prob_i = std::pow(0.5, static_cast<double>(n));
+    for (int i = 0; i <= k; ++i) {
+        cdf += prob_i;
+        if (i < n) {
+            prob_i *= static_cast<double>(n - i) / static_cast<double>(i + 1);
+        }
+    }
+    double pValue = std::min(1.0, 2.0 * cdf);
+    return pValue;
 }
 
 /**
