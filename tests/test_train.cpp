@@ -313,7 +313,8 @@ void testMiniEvolutionEndToEnd() {
     cfg.generations = 2;
     cfg.populationSize = 4;
     cfg.seedsPerGen = 1;
-    cfg.maxTicks = 200;
+    cfg.validationSeeds = 2;
+    cfg.maxTicks = 3000;
     cfg.threadCount = 2; // Chạy song song 2 luồng
     cfg.masterSeed = 54321ULL;
     cfg.outBestFile = outBestFile;
@@ -331,6 +332,7 @@ void testMiniEvolutionEndToEnd() {
     assert(loadTrainedAiProfile(outBestFile, bestP, &bestMeta) && "Doc file best params phai thanh cong!");
     assert(isParamsValid(bestP));
     assert(bestMeta.generation >= 1);
+    assert((bestMeta.fitness != 0.0f || bestMeta.winRateVsBaseline > 0.0f) && "Mini evolution phai co giao tranh va fitness khac 0!");
 
     // Xác nhận file CSV tồn tại và có dữ liệu
     assert(std::filesystem::exists(logCsvFile) && "File log CSV phai duoc tao ra!");
@@ -421,15 +423,24 @@ void testBestSelectionBasedOnValidation() {
     std::cout << "[TestTrain] 6. Kiem tra Best Profile duoc chon nghiem ngat theo Validation (Test 6)...\n";
 
     const std::string outBest = "test_val_best.json";
+    const std::string resumeFile = "test_val_strong.json";
     std::filesystem::remove(outBest);
+    std::filesystem::remove(resumeFile);
+
+    // Tao ca the ro rang manh hon baseline mac dinh (enableUnitRetreat=false)
+    AiParams strongParams{};
+    strongParams.enableUnitRetreat = false;
+    AiTrainingMetadata initMeta{};
+    saveTrainedAiProfile(resumeFile, strongParams, initMeta);
 
     TrainerConfig cfg;
     cfg.mode = TrainingMode::Evolution;
+    cfg.resumeFile = resumeFile;
     cfg.generations = 2;
     cfg.populationSize = 4;
     cfg.seedsPerGen = 1;
-    cfg.validationSeeds = 8;
-    cfg.maxTicks = 150;
+    cfg.validationSeeds = 4;
+    cfg.maxTicks = 3000;
     cfg.threadCount = 2;
     cfg.masterSeed = 0x1234567890ULL;
     cfg.outBestFile = outBest;
@@ -466,11 +477,13 @@ void testBestSelectionBasedOnValidation() {
     float expectedWinRate = (valTotal > 0) ? (static_cast<float>(valWins) / static_cast<float>(valTotal)) : 0.0f;
 
     // Khang dinh diem luu trong metadata khop chinh xac voi validation fitness tinh toan doc lap
+    assert(savedMeta.fitness != 0.0f && "Fitness cua best profile phai khac 0!");
     assert(std::abs(savedMeta.fitness - expectedAvgFit) < 1e-3f);
     assert(std::abs(savedMeta.winRateVsBaseline - expectedWinRate) < 1e-3f);
     assert(savedMeta.baselineProfile == "defaults");
 
     std::filesystem::remove(outBest);
+    std::filesystem::remove(resumeFile);
     std::cout << "  -> PASSED: Best profile duoc luu da duoc kiem chung trung khop 100% voi ket qua Validation doc lap!\n";
 }
 
