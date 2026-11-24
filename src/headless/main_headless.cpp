@@ -231,6 +231,8 @@ int main(int argc, char* argv[]) {
             opt.saveReplayFile = argv[++i];
         } else if (arg == "--replay-dir" && i + 1 < argc) {
             opt.replayDir = argv[++i];
+        } else if (arg == "--order-player-first") {
+            opt.combatOrderMode = sim::CombatOrderMode::PlayerFirst;
         } else if (arg == "--order-enemy-first") {
             opt.combatOrderMode = sim::CombatOrderMode::EnemyFirst;
         } else if (arg == "--order-alternate") {
