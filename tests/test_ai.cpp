@@ -531,6 +531,7 @@ void testParameterEffectiveness() {
 
         const auto* tankCfg = sim.getConfig().getUnitConfig(UnitType::Leopard2A);
         const auto* infCfg = sim.getConfig().getUnitConfig(UnitType::Infantry);
+        const auto* suCfg = sim.getConfig().getUnitConfig(UnitType::Su57);
 
         // Don vi ta (Leopard 2A) tai (50, 50), bi thuong nang con 20% mau (< retreatHpRatio 0.30)
         sim.getUnits().emplace_back(50, Faction::Player, UnitType::Leopard2A, 50000, 50000, *tankCfg);
@@ -538,6 +539,8 @@ void testParameterEffectiveness() {
 
         // Dich (Infantry) tai (50, 62) -> khoang cach = 12 o
         sim.getUnits().emplace_back(51, Faction::Enemy, UnitType::Infantry, 50000, 62000, *infCfg);
+        // Su-57 mo tam nhin de quan ta nhin thay dich tai (50, 62)
+        sim.getUnits().emplace_back(52, Faction::Player, UnitType::Su57, 50000, 60000, *suCfg);
         sim.updateVision();
 
         // Truong hop 1: threatRadiusTiles = 8.0f (< 12 o) -> dich nam ngoai ban kinh nguy hiem -> khong chay
@@ -545,25 +548,20 @@ void testParameterEffectiveness() {
         pSmallThreat.threatRadiusTiles = 8.0f;
         TacticalAI aiSmallThreat(Faction::Player, SEED, pSmallThreat);
         auto cmdsSmall = aiSmallThreat.plan(sim);
-        bool smallRetreated = false;
-        for (const auto& c : cmdsSmall) {
-            // If retreat, destination will be away from (50, 62)
-            if (c.type == CommandType::Move && !c.move.unitIds.empty() && c.move.unitIds[0] == 50) {
-                if (c.move.targetTileY < 50) smallRetreated = true;
-            }
-        }
+        bool smallRetreated = (aiSmallThreat.getUnitIntent(50) == "Retreating (Threat Nearby)");
 
         // Truong hop 2: threatRadiusTiles = 16.0f (>= 12 o) -> dich nam trong ban kinh nguy hiem -> lui gap
         AiParams pLargeThreat;
         pLargeThreat.threatRadiusTiles = 16.0f;
         TacticalAI aiLargeThreat(Faction::Player, SEED, pLargeThreat);
         auto cmdsLarge = aiLargeThreat.plan(sim);
-        bool largeRetreated = false;
-        for (const auto& c : cmdsLarge) {
-            if (c.type == CommandType::Move && !c.move.unitIds.empty() && c.move.unitIds[0] == 50) {
-                if (c.move.targetTileY < 50) largeRetreated = true;
-            }
-        }
+        bool largeRetreated = (aiLargeThreat.getUnitIntent(50) == "Retreating (Threat Nearby)");
+
+        std::cout << "  - [threatRadiusTiles] smallRetreated=" << smallRetreated
+                  << " (" << aiSmallThreat.getUnitIntent(50) << ")"
+                  << ", largeRetreated=" << largeRetreated
+                  << " (" << aiLargeThreat.getUnitIntent(50) << ")"
+                  << " | Tank Pos=(50,50), Enemy Pos=(50,62), Dist=12" << std::endl;
 
         assert(!smallRetreated && largeRetreated && "threatRadiusTiles phai quyet dinh don vi bi thuong lui hay dung lai!");
         std::cout << "  - Tham so 'threatRadiusTiles': Da kiem chung ban kinh nguy hiem kich hoat rut lui (8.0 o vs 16.0 o)." << std::endl;
