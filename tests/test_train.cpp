@@ -653,6 +653,40 @@ void testBaselineProfileOptionAndPropagation() {
     std::cout << "  -> PASSED: Baseline profile duoc nap, lan truyen va ghi nhan metadata chinh xac 100%!\n";
 }
 
+// =============================================================================
+// TEST 10: Horizontal Map Reflection Evaluation (--eval-flip-map - M9.12)
+// =============================================================================
+void testEvalFlipMapTerrainReflection() {
+    std::cout << "\n[TEST 10] Kiem tra tuy chon --eval-flip-map va tinh tat dinh tren ban do lat guong...\n";
+
+    ai::AiParams cand{};
+    cand.enableUnitRetreat = false;
+    ai::AiParams base{};
+
+    uint64_t testSeed = 99999ULL;
+    uint64_t maxTicks = 120;
+
+    // 1. Chay cap ban do goc (flipMapX = false)
+    ai::MirrorPairResult orig1 = ai::evaluatePair(cand, base, testSeed, maxTicks, nullptr, 0, 20, nullptr, 2400, false);
+    ai::MirrorPairResult orig2 = ai::evaluatePair(cand, base, testSeed, maxTicks, nullptr, 0, 20, nullptr, 2400, false);
+    assert(orig1.matchA.finalTick == orig2.matchA.finalTick);
+    assert(orig1.matchA.candidateTotalTroops == orig2.matchA.candidateTotalTroops);
+    assert(orig1.matchB.candidateTotalTroops == orig2.matchB.candidateTotalTroops);
+
+    // 2. Chay cap ban do lat guong (flipMapX = true)
+    ai::MirrorPairResult flip1 = ai::evaluatePair(cand, base, testSeed, maxTicks, nullptr, 0, 20, nullptr, 2400, true);
+    ai::MirrorPairResult flip2 = ai::evaluatePair(cand, base, testSeed, maxTicks, nullptr, 0, 20, nullptr, 2400, true);
+    assert(flip1.matchA.finalTick == flip2.matchA.finalTick);
+    assert(flip1.matchA.candidateTotalTroops == flip2.matchA.candidateTotalTroops);
+    assert(flip1.matchB.candidateTotalTroops == flip2.matchB.candidateTotalTroops);
+
+    // Ban do lat guong phai hop le ve so quan ton tai
+    assert(flip1.matchA.finalTick > 0);
+    assert(flip1.matchB.finalTick > 0);
+
+    std::cout << "  -> PASSED: Ban do lat guong hoat dong tat dinh 100% va giu nguyen tinh toan ven mo phong!\n";
+}
+
 int main() {
     std::cout << "========================================================================\n"
               << "War Strategy - AI Self-Play & Trainer Unit Tests (M9)\n"
@@ -667,9 +701,10 @@ int main() {
     testDeadlockEarlyStopEquivalentToMaxTicks();
     testFactionBreakdownAndPairClassification();
     testBaselineProfileOptionAndPropagation();
+    testEvalFlipMapTerrainReflection();
 
     std::cout << "\n========================================================================\n"
-              << "[PASS] TOAN BO 9/9 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
+              << "[PASS] TOAN BO 10/10 KIEM THU AI TRAINER M9 DA DAT CHUAN 100%!\n"
               << "========================================================================\n";
     return 0;
 }

@@ -87,7 +87,8 @@ void printHelp(const char* progName) {
               << "  --eval-only <file.json>      Chi danh gia 1 profile AI tren tap seed moi (khong train)\n"
               << "  --vs-baseline                Danh gia profile doi dau voi Baseline AI (dung kem --eval-only)\n"
               << "  --seeds <N>                  So seed mirror danh gia trong --eval-only (Mac dinh: 8)\n"
-              << "  --seed-base <N>              Gia tri goc de tinh dai seed danh gia (Mac dinh: 0)\n\n"
+              << "  --seed-base <N>              Gia tri goc de tinh dai seed danh gia (Mac dinh: 0)\n"
+              << "  --eval-flip-map              Chay them ban do lat guong truc X (x -> W-1-x) va bao rieng ket qua theo ban do (dung kem --eval-only)\n\n"
               << "Tro Giup:\n"
               << "  --help, -h                   Hien thi huong dan su dung nay\n"
               << "========================================================================\n";
@@ -107,6 +108,126 @@ void printBaselineInfo(const std::string& baselinePath, const ai::AiParams& base
         }
     }
 }
+
+struct EvalMatchStats {
+    int totalMatches = 0;
+    int candidateWins = 0;
+    int opponentWins = 0;
+    int draws = 0;
+    int candidateCmdDeaths = 0;
+    int opponentCmdDeaths = 0;
+    int timeoutMatches = 0;
+    float totalFitnessSum = 0.0f;
+
+    int candMatchesBlue = 0;
+    int candWinsBlue = 0;
+    int candMatchesRed = 0;
+    int candWinsRed = 0;
+
+    int pairsSweep2_0 = 0;
+    int pairsSweep0_2 = 0;
+    int pairsSplit1_1 = 0;
+    int pairsSplit1_1_BlueBoth = 0;
+    int pairsSplit1_1_RedBoth  = 0;
+    int pairsOther = 0;
+
+    void addPair(const ai::MirrorPairResult& pair) {
+        if (pair.seed == 0 && pair.matchA.finalTick == 0) return;
+        totalMatches += 2;
+        candidateWins += pair.candidateWins;
+        opponentWins += pair.opponentWins;
+        draws += pair.draws;
+        totalFitnessSum += pair.totalFitness;
+
+        candMatchesBlue++;
+        if (pair.matchA.isWin) candWinsBlue++;
+
+        candMatchesRed++;
+        if (pair.matchB.isWin) candWinsRed++;
+
+        if (pair.candidateWins == 2) {
+            pairsSweep2_0++;
+        } else if (pair.opponentWins == 2) {
+            pairsSweep0_2++;
+        } else if (pair.candidateWins == 1 && pair.opponentWins == 1) {
+            pairsSplit1_1++;
+            if (pair.matchA.isWin && pair.matchB.isLoss) {
+                pairsSplit1_1_BlueBoth++;
+            } else if (pair.matchA.isLoss && pair.matchB.isWin) {
+                pairsSplit1_1_RedBoth++;
+            }
+        } else {
+            pairsOther++;
+        }
+
+        auto checkMatch = [&](const ai::SingleMatchResult& m) {
+            if (m.didCandidateCommanderDie()) candidateCmdDeaths++;
+            if (m.opponentCommanderHp <= 0 || (m.isWin && m.endKind == sim::MatchEndKind::CommanderKilled)) {
+                opponentCmdDeaths++;
+            }
+            if (m.endKind == sim::MatchEndKind::Timeout) {
+                timeoutMatches++;
+            }
+        };
+        checkMatch(pair.matchA);
+        checkMatch(pair.matchB);
+    }
+
+    void print(const std::string& sectionTitle) const {
+        float winrate = (totalMatches > 0) ? (static_cast<float>(candidateWins) / static_cast<float>(totalMatches)) : 0.0f;
+        float winrateBlue = (candMatchesBlue > 0) ? (static_cast<float>(candWinsBlue) / static_cast<float>(candMatchesBlue)) : 0.0f;
+        float winrateRed = (candMatchesRed > 0) ? (static_cast<float>(candWinsRed) / static_cast<float>(candMatchesRed)) : 0.0f;
+        float avgFit = (totalMatches > 0) ? (totalFitnessSum / static_cast<float>(totalMatches / 2)) : 0.0f;
+        int totalPairs = totalMatches / 2;
+
+        std::cout << "\n========================================================================\n"
+                  << sectionTitle << "\n"
+                  << "========================================================================\n"
+                  << "  - Tong so tran:               " << totalMatches << " (" << totalPairs << " cap seed)\n"
+                  << "  - Ket qua (Thang - Thua - Hoa): " << candidateWins << " - " << opponentWins << " - " << draws << "\n"
+                  << "  - Ty le thang tong:           " << std::fixed << std::setprecision(1) << (winrate * 100.0f) << "%\n"
+                  << "------------------------------------------------------------------------\n"
+                  << "  - Winrate khi Candidate la Blue: " << std::setprecision(1) << (winrateBlue * 100.0f) << "% (" << candWinsBlue << "/" << candMatchesBlue << ")\n"
+                  << "  - Winrate khi Candidate la Red : " << std::setprecision(1) << (winrateRed * 100.0f) << "% (" << candWinsRed << "/" << candMatchesRed << ")\n"
+                  << "------------------------------------------------------------------------\n"
+                  << "  - Do nen phep do (Phan bo ket qua theo cap Seed):\n"
+                  << "    * Cap 2-0 (Candidate sweep thang ca 2 tran): " << pairsSweep2_0 << " (" << (totalPairs > 0 ? (pairsSweep2_0 * 100.0f / totalPairs) : 0.0f) << "%)\n"
+                  << "    * Cap 0-2 (Baseline sweep thang ca 2 tran):  " << pairsSweep0_2 << " (" << (totalPairs > 0 ? (pairsSweep0_2 * 100.0f / totalPairs) : 0.0f) << "%)\n"
+                  << "    * Cap 1-1 (Hai tran cung thuoc ve 1 phe):   " << pairsSplit1_1 << " (" << (totalPairs > 0 ? (pairsSplit1_1 * 100.0f / totalPairs) : 0.0f) << "%)\n"
+                  << "      + Trong do Blue thang ca 2 tran:          " << pairsSplit1_1_BlueBoth << "\n"
+                  << "      + Trong do Red thang ca 2 tran:           " << pairsSplit1_1_RedBoth << "\n";
+        if (pairsOther > 0) {
+            std::cout << "    * Cap co ket qua hoa:                       " << pairsOther << " (" << (pairsOther * 100.0f / totalPairs) << "%)\n";
+        }
+        std::cout << "------------------------------------------------------------------------\n"
+                  << "  - Tu lenh Candidate chet:     " << candidateCmdDeaths << " / " << totalMatches << " tran\n"
+                  << "  - Tu lenh Baseline chet:      " << opponentCmdDeaths << " / " << totalMatches << " tran\n"
+                  << "  - Tran ket thuc do het gio:   " << timeoutMatches << " / " << totalMatches << " tran\n"
+                  << "  - Fitness trung binh moi seed: " << std::setprecision(1) << avgFit << "\n"
+                  << "------------------------------------------------------------------------\n";
+
+        ai::WilsonCI ci = ai::wilsonScoreInterval(candidateWins, totalMatches);
+        double pValue = ai::pairedSignTestPValue(pairsSweep2_0, pairsSweep0_2);
+
+        std::cout << "  THONG KE (M9.11):\n"
+                  << "  - Winrate:        " << std::setprecision(1) << (winrate * 100.0f) << "% ("
+                  << candidateWins << "/" << totalMatches << " tran)\n"
+                  << "  - Wilson CI 95%:  [" << std::setprecision(1) << (ci.lower * 100.0) << "%, "
+                  << std::setprecision(1) << (ci.upper * 100.0) << "%]\n"
+                  << "  - Sign Test (cap 2-0 vs 0-2): "
+                  << pairsSweep2_0 << " vs " << pairsSweep0_2
+                  << ", p-value = " << std::setprecision(4) << pValue << "\n";
+
+        if (pValue < 0.05 && ci.lower > 0.50) {
+            std::cout << "  >>> KET LUAN: TOT HON Baseline (p<0.05, CI lower > 50%)\n";
+        } else if (std::abs(winrate - 0.5f) < 0.001f && pairsSweep2_0 == pairsSweep0_2) {
+            std::cout << "  >>> KET LUAN: CAN BANG voi Baseline\n";
+        } else {
+            std::cout << "  >>> KET LUAN: CHUA KET LUAN (can them du lieu hoac p >= 0.05)\n";
+        }
+        std::cout << "========================================================================\n";
+    }
+};
 
 int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t numSeeds,
                       const ai::TrainerConfig& config, uint64_t seedBase) {
@@ -136,13 +257,16 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
               << "========================================================================\n"
               << "  - Profile can danh gia:       " << evalFile << "\n";
     printBaselineInfo(config.baselineFile, opponentParams);
-    std::cout << "  - So seed danh gia:           " << numSeeds << " (" << (numSeeds * 2) << " tran mirror)\n"
+    std::cout << "  - So seed danh gia:           " << numSeeds << " ("
+              << (config.evalFlipMap ? (numSeeds * 4) : (numSeeds * 2)) << " tran "
+              << (config.evalFlipMap ? "[Original + Flipped X]" : "[Mirror]") << ")\n"
+              << "  - Che do Lat Ban Do (--eval-flip-map): " << (config.evalFlipMap ? "BAT (x -> W-1-x)" : "TAT") << "\n"
               << "  - Max Ticks moi tran:         " << config.maxTicks << " (~" << (config.maxTicks / 20) << "s in-game)\n"
               << "  - So luong CPU:               " << config.threadCount << "\n"
               << "  - Master Seed danh gia:       " << config.masterSeed << "\n"
               << "  - Seed Base:                  " << seedBase << "\n"
               << "========================================================================\n"
-              << "Dang tien hanh danh gia cac cap tran Mirror song song...\n" << std::flush;
+              << "Dang tien hanh danh gia cac cap tran song song...\n" << std::flush;
 
     // Metadata profile
     std::cout << "  [Profile Metadata] generation=" << evalMeta.generation
@@ -157,7 +281,25 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
         evalSeeds[s] = rng.next64();
     }
 
-    std::vector<ai::MirrorPairResult> results(numSeeds);
+    struct EvalPairTask {
+        uint64_t seed{0};
+        size_t resultIdx{0};
+        bool isFlipped{false};
+    };
+
+    std::vector<EvalPairTask> tasks;
+    for (uint32_t s = 0; s < numSeeds; ++s) {
+        tasks.push_back({evalSeeds[s], s, false});
+    }
+    if (config.evalFlipMap) {
+        for (uint32_t s = 0; s < numSeeds; ++s) {
+            tasks.push_back({evalSeeds[s], s, true});
+        }
+    }
+
+    std::vector<ai::MirrorPairResult> resultsOrig(numSeeds);
+    std::vector<ai::MirrorPairResult> resultsFlip(config.evalFlipMap ? numSeeds : 0);
+
     std::atomic<size_t> nextTask{0};
     std::atomic<bool> stopRequested{false};
     g_evalStopRequested = &stopRequested;
@@ -166,15 +308,21 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
     auto worker = [&]() {
         while (!stopRequested.load()) {
             size_t idx = nextTask.fetch_add(1);
-            if (idx >= numSeeds) break;
-            results[idx] = ai::evaluatePair(evalParams, opponentParams, evalSeeds[idx],
-                                            config.maxTicks, nullptr, static_cast<int>(idx * 2 + 1),
-                                            0, &stopRequested);
+            if (idx >= tasks.size()) break;
+            const auto& t = tasks[idx];
+            ai::MirrorPairResult res = ai::evaluatePair(evalParams, opponentParams, t.seed,
+                                                        config.maxTicks, nullptr, static_cast<int>(idx * 2 + 1),
+                                                        0, &stopRequested, config.stallTicks, t.isFlipped);
+            if (!t.isFlipped) {
+                resultsOrig[t.resultIdx] = res;
+            } else {
+                resultsFlip[t.resultIdx] = res;
+            }
         }
     };
 
     std::vector<std::thread> workers;
-    uint32_t numThreads = std::max(1u, std::min(config.threadCount, numSeeds));
+    uint32_t numThreads = std::max(1u, std::min(config.threadCount, static_cast<uint32_t>(tasks.size())));
     for (uint32_t th = 0; th < numThreads; ++th) {
         workers.emplace_back(worker);
     }
@@ -187,130 +335,29 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
         std::cout << "\n[Canh bao] Tien trinh danh gia bi dung som boi nguoi dung (SIGINT).\n";
     }
 
-    int totalMatches = 0;
-    int candidateWins = 0;
-    int opponentWins = 0;
-    int draws = 0;
-    int candidateCmdDeaths = 0;
-    int opponentCmdDeaths = 0;
-    int timeoutMatches = 0;
-    float totalFitnessSum = 0.0f;
+    EvalMatchStats statsOrig;
+    EvalMatchStats statsFlip;
+    EvalMatchStats statsCombined;
 
-    // Phân tích chi tiết theo phe và độ nén cặp trận (M9.10 Item 4)
-    int candMatchesBlue = 0;
-    int candWinsBlue = 0;
-    int candMatchesRed = 0;
-    int candWinsRed = 0;
+    for (size_t i = 0; i < numSeeds; ++i) {
+        statsOrig.addPair(resultsOrig[i]);
+        statsCombined.addPair(resultsOrig[i]);
+    }
 
-    int pairsSweep2_0 = 0;         // Candidate thắng cả 2 trận (2-0 sweep)
-    int pairsSweep0_2 = 0;         // Baseline thắng cả 2 trận (0-2 sweep)
-    int pairsSplit1_1 = 0;         // Hòa cặp 1-1 (cả 2 trận cùng thuộc về phe)
-    int pairsSplit1_1_BlueBoth = 0; // Cả 2 trận đều do Blue thắng
-    int pairsSplit1_1_RedBoth  = 0; // Cả 2 trận đều do Red thắng
-    int pairsOther = 0;            // Cặp có trận hòa (draw)
-
-    for (size_t i = 0; i < nextTask.load() && i < numSeeds; ++i) {
-        const auto& pair = results[i];
-        if (pair.seed == 0 && pair.matchA.finalTick == 0) continue; // Task chua chay
-        totalMatches += 2;
-        candidateWins += pair.candidateWins;
-        opponentWins += pair.opponentWins;
-        draws += pair.draws;
-        totalFitnessSum += pair.totalFitness;
-
-        // Theo dõi theo phe (MatchA: Candidate Blue; MatchB: Candidate Red)
-        candMatchesBlue++;
-        if (pair.matchA.isWin) candWinsBlue++;
-
-        candMatchesRed++;
-        if (pair.matchB.isWin) candWinsRed++;
-
-        // Phân loại kết quả cặp seed
-        if (pair.candidateWins == 2) {
-            pairsSweep2_0++;
-        } else if (pair.opponentWins == 2) {
-            pairsSweep0_2++;
-        } else if (pair.candidateWins == 1 && pair.opponentWins == 1) {
-            pairsSplit1_1++;
-            if (pair.matchA.isWin && pair.matchB.isLoss) {
-                pairsSplit1_1_BlueBoth++;
-            } else if (pair.matchA.isLoss && pair.matchB.isWin) {
-                pairsSplit1_1_RedBoth++;
-            }
-        } else {
-            pairsOther++;
+    if (config.evalFlipMap) {
+        for (size_t i = 0; i < numSeeds; ++i) {
+            statsFlip.addPair(resultsFlip[i]);
+            statsCombined.addPair(resultsFlip[i]);
         }
 
-        auto checkMatch = [&](const ai::SingleMatchResult& m) {
-            if (m.didCandidateCommanderDie()) candidateCmdDeaths++;
-            if (m.opponentCommanderHp <= 0 || (m.isWin && m.endKind == sim::MatchEndKind::CommanderKilled)) {
-                opponentCmdDeaths++;
-            }
-            if (m.endKind == sim::MatchEndKind::Timeout) {
-                timeoutMatches++;
-            }
-        };
-
-        checkMatch(pair.matchA);
-        checkMatch(pair.matchB);
-    }
-
-    float winrate = (totalMatches > 0) ? (static_cast<float>(candidateWins) / static_cast<float>(totalMatches)) : 0.0f;
-    float winrateBlue = (candMatchesBlue > 0) ? (static_cast<float>(candWinsBlue) / static_cast<float>(candMatchesBlue)) : 0.0f;
-    float winrateRed = (candMatchesRed > 0) ? (static_cast<float>(candWinsRed) / static_cast<float>(candMatchesRed)) : 0.0f;
-    float avgFit = (totalMatches > 0) ? (totalFitnessSum / static_cast<float>(totalMatches / 2)) : 0.0f;
-    int totalPairs = totalMatches / 2;
-
-    std::cout << "\n========================================================================\n"
-              << "KET QUA DANH GIA PROFILE VS BASELINE\n"
-              << "========================================================================\n"
-              << "  - Tong so tran mirror:        " << totalMatches << " (" << totalPairs << " seeds)\n"
-              << "  - Ket qua (Thang - Thua - Hoa): " << candidateWins << " - " << opponentWins << " - " << draws << "\n"
-              << "  - Ty le thang tong (Mirror):  " << std::fixed << std::setprecision(1) << (winrate * 100.0f) << "%\n"
-              << "------------------------------------------------------------------------\n"
-              << "  - Winrate khi Candidate la Blue: " << std::setprecision(1) << (winrateBlue * 100.0f) << "% (" << candWinsBlue << "/" << candMatchesBlue << ")\n"
-              << "  - Winrate khi Candidate la Red : " << std::setprecision(1) << (winrateRed * 100.0f) << "% (" << candWinsRed << "/" << candMatchesRed << ")\n"
-              << "------------------------------------------------------------------------\n"
-              << "  - Do nen phep do (Phan bo ket qua theo cap Seed):\n"
-              << "    * Cap 2-0 (Candidate sweep thang ca 2 tran): " << pairsSweep2_0 << " (" << (totalPairs > 0 ? (pairsSweep2_0 * 100.0f / totalPairs) : 0.0f) << "%)\n"
-              << "    * Cap 0-2 (Baseline sweep thang ca 2 tran):  " << pairsSweep0_2 << " (" << (totalPairs > 0 ? (pairsSweep0_2 * 100.0f / totalPairs) : 0.0f) << "%)\n"
-              << "    * Cap 1-1 (Hai tran cung thuoc ve 1 phe):   " << pairsSplit1_1 << " (" << (totalPairs > 0 ? (pairsSplit1_1 * 100.0f / totalPairs) : 0.0f) << "%)\n"
-              << "      + Trong do Blue thang ca 2 tran:          " << pairsSplit1_1_BlueBoth << "\n"
-              << "      + Trong do Red thang ca 2 tran:           " << pairsSplit1_1_RedBoth << "\n";
-    if (pairsOther > 0) {
-        std::cout << "    * Cap co ket qua hoa:                       " << pairsOther << " (" << (pairsOther * 100.0f / totalPairs) << "%)\n";
-    }
-    std::cout << "------------------------------------------------------------------------\n"
-              << "  - Tu lenh Candidate chet:     " << candidateCmdDeaths << " / " << totalMatches << " tran\n"
-              << "  - Tu lenh Baseline chet:      " << opponentCmdDeaths << " / " << totalMatches << " tran\n"
-              << "  - Tran ket thuc do het gio:   " << timeoutMatches << " / " << totalMatches << " tran\n"
-              << "  - Fitness trung binh moi seed: " << std::setprecision(1) << avgFit << "\n"
-              << "========================================================================\n";
-
-    // --- Thống kê chặt chẽ (M9.11) ---
-    ai::WilsonCI ci = ai::wilsonScoreInterval(candidateWins, totalMatches);
-    double pValue = ai::pairedSignTestPValue(pairsSweep2_0, pairsSweep0_2);
-
-    std::cout << "------------------------------------------------------------------------\n"
-              << "  THONG KE (M9.11):\n"
-              << "  - Winrate:        " << std::setprecision(1) << (winrate * 100.0f) << "% ("
-              << candidateWins << "/" << totalMatches << " tran)\n"
-              << "  - Wilson CI 95%:  [" << std::setprecision(1) << (ci.lower * 100.0) << "%, "
-              << std::setprecision(1) << (ci.upper * 100.0) << "%]\n"
-              << "  - Sign Test (cap 2-0 vs 0-2): "
-              << pairsSweep2_0 << " vs " << pairsSweep0_2
-              << ", p-value = " << std::setprecision(4) << pValue << "\n";
-
-    // Kết luận chỉ dựa trên thống kê chặt chẽ
-    if (pValue < 0.05 && ci.lower > 0.50) {
-        std::cout << "  >>> KET LUAN: TOT HON Baseline (p<0.05, CI lower > 50%)\n";
-    } else if (std::abs(winrate - 0.5f) < 0.001f && pairsSweep2_0 == pairsSweep0_2) {
-        std::cout << "  >>> KET LUAN: CAN BANG voi Baseline\n";
+        statsOrig.print("KET QUA THEO BAN DO: [1] BAN DO GOC (ORIGINAL MAP)");
+        statsFlip.print("KET QUA THEO BAN DO: [2] BAN DO LAT GUONG TRUC X (FLIPPED MAP)");
+        statsCombined.print("KET QUA TONG HOP (COMBINED - CA 2 BAN DO)");
     } else {
-        std::cout << "  >>> KET LUAN: CHUA KET LUAN (can them du lieu hoac p >= 0.05)\n";
+        statsOrig.print("KET QUA DANH GIA PROFILE VS BASELINE");
     }
-    std::cout << "========================================================================\n\n";
 
+    std::cout << "\n";
     return 0;
 }
 
@@ -338,6 +385,8 @@ int main(int argc, char* argv[]) {
             evalOnlyFile = argv[++i];
         } else if (arg == "--vs-baseline") {
             vsBaseline = true;
+        } else if (arg == "--eval-flip-map") {
+            config.evalFlipMap = true;
         } else if (arg == "--seeds" && i + 1 < argc) {
             evalSeedCount = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--seed-base" && i + 1 < argc) {

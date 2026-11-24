@@ -131,6 +131,8 @@ struct TrainerConfig {
     std::string  logCsvFile;           // Đường dẫn lưu file log CSV
     std::string  showcaseReplayFile;   // Đường dẫn lưu replay trận biểu diễn Champion vs Baseline
 
+    bool         evalFlipMap{false};   // Chạy thêm bản đồ lật gương trục X (M9.12, dung trong --eval-only)
+
     int          printEvery{20};       // Tần suất cập nhật telemetry (ticks)
     bool         liveOutput{true};     // Cập nhật tại chỗ trên CMD
     bool         scrollOutput{false};  // Cuộn log trên CMD
@@ -202,7 +204,8 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
                                      int matchIndex = 0,
                                      int printEvery = 20,
                                      const std::atomic<bool>* stopRequested = nullptr,
-                                     uint32_t stallTicks = 2400);
+                                     uint32_t stallTicks = 2400,
+                                     bool flipMapX = false);
 
 /**
  * @brief Chạy 1 cặp Mirror Match (Trận A: Cand Blue vs Opp Red; Trận B: Opp Blue vs Cand Red)
@@ -215,7 +218,8 @@ MirrorPairResult evaluatePair(const AiParams& candidate,
                               int matchBaseIndex = 0,
                               int printEvery = 20,
                               const std::atomic<bool>* stopRequested = nullptr,
-                              uint32_t stallTicks = 2400);
+                              uint32_t stallTicks = 2400,
+                              bool flipMapX = false);
 
 // =============================================================================
 // Class AiTrainer: Điều phối toàn bộ quá trình huấn luyện đa luồng

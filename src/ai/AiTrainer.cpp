@@ -258,7 +258,8 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
                                      int matchIndex,
                                      int printEvery,
                                      const std::atomic<bool>* stopRequested,
-                                     uint32_t stallTicks) {
+                                     uint32_t stallTicks,
+                                     bool flipMapX) {
     SingleMatchResult res;
     res.candidateIsPlayer = candidateIsPlayer;
 
@@ -272,6 +273,19 @@ SingleMatchResult runSimulationMatch(const AiParams& playerParams,
     mapgen::MapGenConfig cfg;
     mapgen::MapGenerator gen;
     gen.generate(map, seed, cfg);
+    if (flipMapX) {
+        int w = map.getWidth();
+        int h = map.getHeight();
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w / 2; ++x) {
+                int oppX = w - 1 - x;
+                sim::TerrainType t1 = map.getTile(x, y);
+                sim::TerrainType t2 = map.getTile(oppX, y);
+                map.setTile(x, y, t2);
+                map.setTile(oppX, y, t1);
+            }
+        }
+    }
     sim.spawnDivisions(seed);
 
     // AI Player (Blue) & AI Enemy (Red) độc lập
@@ -448,17 +462,18 @@ MirrorPairResult evaluatePair(const AiParams& candidate,
                               int matchBaseIndex,
                               int printEvery,
                               const std::atomic<bool>* stopRequested,
-                              uint32_t stallTicks) {
+                              uint32_t stallTicks,
+                              bool flipMapX) {
     MirrorPairResult pair;
     pair.seed = seed;
 
     // Trận A: Candidate = Player (Blue), Opponent = Enemy (Red)
     pair.matchA = runSimulationMatch(candidate, opponent, true, seed, maxTicks,
-                                     liveWatch, matchBaseIndex, printEvery, stopRequested, stallTicks);
+                                     liveWatch, matchBaseIndex, printEvery, stopRequested, stallTicks, flipMapX);
 
     // Trận B: Opponent = Player (Blue), Candidate = Enemy (Red)
     pair.matchB = runSimulationMatch(opponent, candidate, false, seed, maxTicks,
-                                     liveWatch, matchBaseIndex + 1, printEvery, stopRequested, stallTicks);
+                                     liveWatch, matchBaseIndex + 1, printEvery, stopRequested, stallTicks, flipMapX);
 
     pair.totalFitness = pair.matchA.fitnessScore + pair.matchB.fitnessScore;
 
