@@ -50,6 +50,8 @@ struct HeadlessOptions {
     std::string logCsvFile;
     std::string saveReplayFile;
     std::string replayDir;
+    sim::CombatOrderMode combatOrderMode{sim::CombatOrderMode::Simultaneous};
+    bool        mapFlipX{false};
 };
 
 void printHelp(const char* progName) {
@@ -229,6 +231,14 @@ int main(int argc, char* argv[]) {
             opt.saveReplayFile = argv[++i];
         } else if (arg == "--replay-dir" && i + 1 < argc) {
             opt.replayDir = argv[++i];
+        } else if (arg == "--order-enemy-first") {
+            opt.combatOrderMode = sim::CombatOrderMode::EnemyFirst;
+        } else if (arg == "--order-alternate") {
+            opt.combatOrderMode = sim::CombatOrderMode::AlternateTicks;
+        } else if (arg == "--order-simultaneous") {
+            opt.combatOrderMode = sim::CombatOrderMode::Simultaneous;
+        } else if (arg == "--map-flip-x") {
+            opt.mapFlipX = true;
         } else if (arg == "--ablate-no-safe-retreat") {
             auto flags = ai::TacticalAI::getGlobalAblationFlags();
             flags.enableSafeRetreatExit = false;
@@ -362,8 +372,20 @@ int main(int argc, char* argv[]) {
         mapgen::MapGenConfig mapCfg;
         mapgen::MapGenerator mapGen;
         mapGen.generate(map, currentSeed, mapCfg);
-        std::cout << "MAP: generated (seed=" << currentSeed << ")\n";
+        if (opt.mapFlipX) {
+            for (int y = 0; y < map.getHeight(); ++y) {
+                for (int x = 0; x < map.getWidth() / 2; ++x) {
+                    int oppX = map.getWidth() - 1 - x;
+                    auto t1 = map.getTile(x, y);
+                    auto t2 = map.getTile(oppX, y);
+                    map.setTile(x, y, t2);
+                    map.setTile(oppX, y, t1);
+                }
+            }
+        }
+        std::cout << "MAP: generated (seed=" << currentSeed << (opt.mapFlipX ? ", flipped_x" : "") << ")\n";
 
+        sim.setCombatOrderMode(opt.combatOrderMode);
         sim.spawnDivisions(currentSeed);
 
         // Khởi tạo 2 AI độc lập hoàn toàn
@@ -388,8 +410,15 @@ int main(int argc, char* argv[]) {
             uint64_t tick = sim.getCurrentTick();
 
             // AI tính toán và gửi lệnh vào WorldSim
-            ai1.update(sim);
-            ai2.update(sim);
+            bool enemyAiFirst = (opt.combatOrderMode == sim::CombatOrderMode::EnemyFirst) ||
+                                (opt.combatOrderMode == sim::CombatOrderMode::AlternateTicks && tick % 2 == 1);
+            if (enemyAiFirst) {
+                ai2.update(sim);
+                ai1.update(sim);
+            } else {
+                ai1.update(sim);
+                ai2.update(sim);
+            }
 
             // In telemetry 2 dòng nếu đủ điều kiện
             if (opt.printEvery > 0 && (tick % static_cast<uint64_t>(opt.printEvery) == 0)) {

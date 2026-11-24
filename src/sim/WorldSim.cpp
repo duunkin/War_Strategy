@@ -520,7 +520,7 @@ void WorldSim::resolveCombat() {
 
     if (isGameOver()) return;
 
-    // 2. Duyệt các chấm còn sống theo thứ tự id cố định tăng dần để đảm bảo tính tất định
+    // 2. Duyệt các chấm còn sống theo thứ tự ưu tiên (M9.10)
     m_aliveIdsScratch.clear();
     m_aliveIdsScratch.reserve(m_units.size());
     for (const auto& u : m_units) {
@@ -528,7 +528,26 @@ void WorldSim::resolveCombat() {
             m_aliveIdsScratch.push_back(u.getId());
         }
     }
-    std::sort(m_aliveIdsScratch.begin(), m_aliveIdsScratch.end());
+
+    bool enemyFirst = false;
+    if (m_combatOrderMode == CombatOrderMode::EnemyFirst) {
+        enemyFirst = true;
+    } else if (m_combatOrderMode == CombatOrderMode::AlternateTicks) {
+        enemyFirst = (m_currentTick % 2 == 1);
+    }
+
+    if (enemyFirst) {
+        std::sort(m_aliveIdsScratch.rbegin(), m_aliveIdsScratch.rend());
+    } else {
+        std::sort(m_aliveIdsScratch.begin(), m_aliveIdsScratch.end());
+    }
+
+    struct PendingDamage {
+        uint32_t targetId{0};
+        int damage{0};
+    };
+    std::vector<PendingDamage> pendingDamages;
+    bool isSimultaneous = (m_combatOrderMode == CombatOrderMode::Simultaneous);
 
     for (uint32_t attackerId : m_aliveIdsScratch) {
         Unit* attacker = getUnitById(attackerId);
@@ -602,7 +621,11 @@ void WorldSim::resolveCombat() {
             false,
             static_cast<int>(hits)
         );
-        bestTarget->takeDamage(static_cast<int>(mainDmg));
+        if (isSimultaneous) {
+            pendingDamages.push_back({bestTarget->getId(), static_cast<int>(mainDmg)});
+        } else {
+            bestTarget->takeDamage(static_cast<int>(mainDmg));
+        }
 
         // M6: Tư lệnh lộ diện sau khi nổ súng
         if (attacker->getType() == UnitType::Commander) {
@@ -644,13 +667,26 @@ void WorldSim::resolveCombat() {
                         static_cast<int>(hits),
                         550
                     );
-                    other.takeDamage(static_cast<int>(splashDmg));
+                    if (isSimultaneous) {
+                        pendingDamages.push_back({other.getId(), static_cast<int>(splashDmg)});
+                    } else {
+                        other.takeDamage(static_cast<int>(splashDmg));
+                    }
                 }
             }
         }
 
         // Đặt lại cooldown
         attacker->resetCooldown();
+    }
+
+    if (isSimultaneous) {
+        for (const auto& pd : pendingDamages) {
+            Unit* target = getUnitById(pd.targetId);
+            if (target && !target->isDead()) {
+                target->takeDamage(pd.damage);
+            }
+        }
     }
 }
 

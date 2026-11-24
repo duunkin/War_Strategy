@@ -15,12 +15,25 @@
 namespace sim {
 
 /**
+ * @brief Chế độ thứ tự ưu tiên xử lý giao chiến trong WorldSim (M9.10)
+ */
+enum class CombatOrderMode {
+    PlayerFirst = 0,    // Mặc định: ID tăng dần (1..60)
+    EnemyFirst = 1,     // ID giảm dần (60..1)
+    AlternateTicks = 2, // Chẵn: PlayerFirst, Lẻ: EnemyFirst
+    Simultaneous = 3    // Thu thập sát thương rồi áp dụng cùng lúc
+};
+
+/**
  * @brief Lớp WorldSim quản lý toàn bộ trạng thái mô phỏng game (thuần C++, không SDL, không float).
  */
 class WorldSim {
 public:
     explicit WorldSim(WorldMap& map);
     ~WorldSim() = default;
+
+    void setCombatOrderMode(CombatOrderMode mode) { m_combatOrderMode = mode; }
+    [[nodiscard]] CombatOrderMode getCombatOrderMode() const { return m_combatOrderMode; }
 
     // Nạp cấu hình từ data/game_config.json
     bool loadConfig();
@@ -128,6 +141,7 @@ private:
     std::vector<uint16_t> m_visibleEnemyIndices;
     std::vector<uint32_t> m_aliveIdsScratch;
     double               m_lastVisionUpdateTimeMs{0.0};
+    CombatOrderMode      m_combatOrderMode{CombatOrderMode::Simultaneous};
 };
 
 } // namespace sim
