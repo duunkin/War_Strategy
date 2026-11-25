@@ -56,6 +56,17 @@ bool SimConfig::autoLoad() {
         "../../data/game_config.json"
     };
 
+    {
+        std::lock_guard<std::mutex> lock(g_configCacheMutex);
+        for (const auto& path : candidatePaths) {
+            auto it = g_configCache.find(path);
+            if (it != g_configCache.end()) {
+                *this = it->second;
+                return true;
+            }
+        }
+    }
+
     for (const auto& path : candidatePaths) {
         if (fileExists(path)) {
             return loadFromFile(path);
@@ -84,6 +95,23 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
     if (!readFileToString(filePath, content)) {
         std::cerr << "[SimConfig] LOI: Khong the mo file cau hinh '" << filePath << "'!" << std::endl;
         return false;
+    }
+
+    if (content.size() >= 2) {
+        const auto b0 = static_cast<unsigned char>(content[0]);
+        const auto b1 = static_cast<unsigned char>(content[1]);
+        if ((b0 == 0xFF && b1 == 0xFE) || (b0 == 0xFE && b1 == 0xFF)) {
+            std::cerr << "[SimConfig] LOI: File '" << filePath
+                      << "' la UTF-16 (co BOM) - file là UTF-16, hãy lưu UTF-8!" << std::endl;
+            return false;
+        }
+    }
+
+    if (content.size() >= 3 &&
+        static_cast<unsigned char>(content[0]) == 0xEF &&
+        static_cast<unsigned char>(content[1]) == 0xBB &&
+        static_cast<unsigned char>(content[2]) == 0xBF) {
+        content.erase(0, 3);
     }
 
     nlohmann::json root;

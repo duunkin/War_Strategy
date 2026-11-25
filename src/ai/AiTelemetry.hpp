@@ -6,6 +6,7 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <iostream>
 #include <cstdint>
 #include <vector>
 #include <fstream>
@@ -263,10 +264,27 @@ inline bool saveTrainedAiProfile(const std::string& filepath, const AiParams& pa
  */
 inline bool loadTrainedAiProfile(const std::string& filepath, AiParams& outParams, AiTrainingMetadata* outMeta = nullptr) {
     try {
-        std::ifstream f(filepath);
+        std::ifstream f(filepath, std::ios::binary);
         if (!f.is_open()) return false;
 
-        nlohmann::json root = nlohmann::json::parse(f);
+        std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        if (content.size() >= 2) {
+            const auto b0 = static_cast<unsigned char>(content[0]);
+            const auto b1 = static_cast<unsigned char>(content[1]);
+            if ((b0 == 0xFF && b1 == 0xFE) || (b0 == 0xFE && b1 == 0xFF)) {
+                std::cerr << "[AiTelemetry] LOI: File '" << filepath
+                          << "' la UTF-16 (co BOM) - file là UTF-16, hãy lưu UTF-8!\n";
+                return false;
+            }
+        }
+        if (content.size() >= 3 &&
+            static_cast<unsigned char>(content[0]) == 0xEF &&
+            static_cast<unsigned char>(content[1]) == 0xBB &&
+            static_cast<unsigned char>(content[2]) == 0xBF) {
+            content.erase(0, 3);
+        }
+
+        nlohmann::json root = nlohmann::json::parse(content);
         if (root.contains("params") && root["params"].is_object()) {
             from_json(root["params"], outParams);
             if (outMeta && root.contains("metadata") && root["metadata"].is_object()) {

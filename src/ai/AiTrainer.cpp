@@ -546,6 +546,12 @@ void AiTrainer::requestStop() {
 }
 
 bool AiTrainer::train() {
+    sim::SimConfig preloadSimConfig;
+    if (!preloadSimConfig.autoLoad()) {
+        std::cerr << "[AiTrainer] LOI: Khong the nap cau hinh SimConfig! Dung huan luyen.\n";
+        return false;
+    }
+
     initCsvLog();
 
     bool ok = false;

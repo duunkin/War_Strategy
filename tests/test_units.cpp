@@ -13,6 +13,8 @@
 #include <iostream>
 #include <cmath>
 #include <unordered_set>
+#include <fstream>
+#include <cstdio>
 
 int main() {
     std::cout << "==================================================\n";
@@ -336,6 +338,60 @@ int main() {
         }
     }
     std::cout << "-> TEST 6 THANH CONG: 20/20 seed thuc te deu spawn chuan xac tai 2 trung diem canh ben!" << std::endl;
+
+    // -------------------------------------------------------------
+    // Test 7: Kiem tra BOM UTF-16 (tu choi) va UTF-8 BOM (chap nhan)
+    // -------------------------------------------------------------
+    std::cout << "\n[TEST 7] Kiem tra phat hien BOM UTF-16 va chap nhan UTF-8 BOM..." << std::endl;
+    {
+        sim::SimConfig::clearCache();
+
+        // Doc noi dung hop le tu data/game_config.json
+        std::ifstream validIn("data/game_config.json", std::ios::binary);
+        assert(validIn.is_open());
+        std::string validJson((std::istreambuf_iterator<char>(validIn)), std::istreambuf_iterator<char>());
+        validIn.close();
+
+        // 7a. UTF-16 LE BOM (FF FE) phai bi tu choi
+        const std::string utf16LePath = "data/_test_tmp_utf16le.json";
+        {
+            std::ofstream out(utf16LePath, std::ios::binary);
+            out.put(static_cast<char>(0xFF));
+            out.put(static_cast<char>(0xFE));
+            out.write("{\0\n\0}\0", 6);
+        }
+        sim::SimConfig cfg16Le;
+        assert(!cfg16Le.loadFromFile(utf16LePath) && "UTF-16 LE BOM phai bi tu choi!");
+        std::remove(utf16LePath.c_str());
+
+        // 7b. UTF-16 BE BOM (FE FF) phai bi tu choi
+        const std::string utf16BePath = "data/_test_tmp_utf16be.json";
+        {
+            std::ofstream out(utf16BePath, std::ios::binary);
+            out.put(static_cast<char>(0xFE));
+            out.put(static_cast<char>(0xFF));
+            out.write("\0{\0}", 4);
+        }
+        sim::SimConfig cfg16Be;
+        assert(!cfg16Be.loadFromFile(utf16BePath) && "UTF-16 BE BOM phai bi tu choi!");
+        std::remove(utf16BePath.c_str());
+
+        // 7c. UTF-8 BOM (EF BB BF) phai duoc chap nhan
+        const std::string utf8BomPath = "data/_test_tmp_utf8bom.json";
+        {
+            std::ofstream out(utf8BomPath, std::ios::binary);
+            out.put(static_cast<char>(0xEF));
+            out.put(static_cast<char>(0xBB));
+            out.put(static_cast<char>(0xBF));
+            out.write(validJson.data(), static_cast<std::streamsize>(validJson.size()));
+        }
+        sim::SimConfig cfg8Bom;
+        assert(cfg8Bom.loadFromFile(utf8BomPath) && "UTF-8 BOM phai duoc chap nhan!");
+        assert(cfg8Bom.getAllUnitConfigs().size() == 11);
+        std::remove(utf8BomPath.c_str());
+        sim::SimConfig::clearCache();
+    }
+    std::cout << "-> TEST 7 THANH CONG: Phat hien UTF-16 BOM va chap nhan UTF-8 BOM chuan xac!" << std::endl;
 
     std::cout << "\n==================================================\n";
     std::cout << " ALL TESTS PASSED! MOC M3 JSON HOAN TOAN CHUAN XAC!\n";

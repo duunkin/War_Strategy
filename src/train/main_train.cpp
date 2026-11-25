@@ -242,6 +242,12 @@ int runEvaluationOnly(const std::string& evalFile, bool /*vsBaseline*/, uint32_t
         return 1;
     }
 
+    sim::SimConfig preloadSimConfig;
+    if (!preloadSimConfig.autoLoad()) {
+        std::cerr << "[ERROR] Khong the nap cau hinh SimConfig! Dung danh gia (--eval-only).\n";
+        return 1;
+    }
+
     ai::AiParams evalParams;
     ai::AiTrainingMetadata evalMeta;
     if (!ai::loadTrainedAiProfile(evalFile, evalParams, &evalMeta)) {
