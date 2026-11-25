@@ -136,6 +136,9 @@ public:
     // Đọc cấu hình từ đường dẫn thư mục hoặc file cụ thể
     bool loadFromFile(const std::string& filePath);
 
+    // Xóa bộ nhớ đệm cấu hình (hỗ trợ kiểm thử nếu cần nạp lại)
+    static void clearCache();
+
     // Ánh xạ địa hình từ WorldMap (M2) sang DetailedTerrainType (JSON)
     // Sea: cách đất liền >= 3 ô là DEEP_SEA, còn lại COASTAL_SEA
     // Lake: COASTAL_SEA

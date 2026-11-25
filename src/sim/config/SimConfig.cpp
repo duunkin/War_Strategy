@@ -4,8 +4,18 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include <mutex>
+#include <unordered_map>
 
 namespace sim {
+
+static std::mutex g_configCacheMutex;
+static std::unordered_map<std::string, SimConfig> g_configCache;
+
+void SimConfig::clearCache() {
+    std::lock_guard<std::mutex> lock(g_configCacheMutex);
+    g_configCache.clear();
+}
 
 static bool fileExists(const std::string& path) {
     FILE* f = std::fopen(path.c_str(), "rb");
@@ -46,6 +56,17 @@ bool SimConfig::autoLoad() {
         "../../data/game_config.json"
     };
 
+    {
+        std::lock_guard<std::mutex> lock(g_configCacheMutex);
+        for (const auto& path : candidatePaths) {
+            auto it = g_configCache.find(path);
+            if (it != g_configCache.end()) {
+                *this = it->second;
+                return true;
+            }
+        }
+    }
+
     for (const auto& path : candidatePaths) {
         if (fileExists(path)) {
             return loadFromFile(path);
@@ -62,26 +83,35 @@ static UnitDomain parseDomain(const std::string& domainStr) {
     return UnitDomain::Land;
 }
 
-static UnitType parseUnitTypeKey(const std::string& key) {
-    if (key == "COMMANDER") return UnitType::Commander;
-    if (key == "INFANTRY") return UnitType::Infantry;
-    if (key == "LEOPARD_2A") return UnitType::Leopard2A;
-    if (key == "T14_ARMATA") return UnitType::T14Armata;
-    if (key == "PUMA") return UnitType::Puma;
-    if (key == "CAESAR") return UnitType::Caesar;
-    if (key == "GEPARD") return UnitType::Gepard;
-    if (key == "SU57") return UnitType::Su57;
-    if (key == "B2_SPIRIT") return UnitType::B2Spirit;
-    if (key == "FFM3_MOGAMI") return UnitType::Mogami;
-    if (key == "DD151_ASAGIRI") return UnitType::Asagiri;
-    return UnitType::Count;
-}
-
 bool SimConfig::loadFromFile(const std::string& filePath) {
+    std::lock_guard<std::mutex> lock(g_configCacheMutex);
+    auto it = g_configCache.find(filePath);
+    if (it != g_configCache.end()) {
+        *this = it->second;
+        return true;
+    }
+
     std::string content;
     if (!readFileToString(filePath, content)) {
         std::cerr << "[SimConfig] LOI: Khong the mo file cau hinh '" << filePath << "'!" << std::endl;
         return false;
+    }
+
+    if (content.size() >= 2) {
+        const auto b0 = static_cast<unsigned char>(content[0]);
+        const auto b1 = static_cast<unsigned char>(content[1]);
+        if ((b0 == 0xFF && b1 == 0xFE) || (b0 == 0xFE && b1 == 0xFF)) {
+            std::cerr << "[SimConfig] LOI: File '" << filePath
+                      << "' la UTF-16 (co BOM) - file là UTF-16, hãy lưu UTF-8!" << std::endl;
+            return false;
+        }
+    }
+
+    if (content.size() >= 3 &&
+        static_cast<unsigned char>(content[0]) == 0xEF &&
+        static_cast<unsigned char>(content[1]) == 0xBB &&
+        static_cast<unsigned char>(content[2]) == 0xBF) {
+        content.erase(0, 3);
     }
 
     nlohmann::json root;
@@ -216,6 +246,8 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
               << "  Scale: 1 o = " << m_scale.tileMeters << " m, "
               << m_scale.tilePixels << " px, ban do " << m_scale.mapWidth << "x" << m_scale.mapHeight
               << ", tickRate " << m_scale.tickRate << " tps" << std::endl;
+
+    g_configCache[filePath] = *this;
     return true;
 }
 

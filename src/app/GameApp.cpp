@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <chrono>
+#include <filesystem>
 
 namespace app {
 
@@ -28,6 +29,17 @@ void GameApp::regenerateMap(uint64_t seed) {
     m_currentSeed = seed;
     m_mapGenerator.generate(m_worldMap, m_currentSeed, m_mapConfig);
     m_worldSim.spawnPlayerDivisions(m_currentSeed);
+    m_enemyAI.reset(m_currentSeed);
+
+    // Căn camera ban đầu tập trung vào khu vực spawn trung điểm cạnh trái của Player
+    int tileSize = m_worldMap.getTileSize();
+    float playerSpawnPixelX = static_cast<float>(m_worldSim.getPlayerSpawnAnchorX() * tileSize);
+    float playerSpawnPixelY = static_cast<float>(m_worldSim.getPlayerSpawnAnchorY() * tileSize);
+    float camStartX = playerSpawnPixelX - static_cast<float>(m_window.getWidth()) * 0.5f;
+    float camStartY = playerSpawnPixelY - static_cast<float>(m_window.getHeight()) * 0.5f;
+    m_camera.setPosition(camStartX, camStartY);
+    m_camera.clampToBounds(m_window.getWidth(), m_window.getHeight(), m_worldMap.getWorldWidth(), m_worldMap.getWorldHeight());
+
     if (m_window.getSDLRenderer()) {
         sim::Faction viewingFaction = m_worldSim.getControlledFaction();
         m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(viewingFaction), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
@@ -57,7 +69,7 @@ bool GameApp::init() {
     // 2. Mở cửa sổ 1280x720 có ghi rõ thời gian build ở tiêu đề
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 720;
-    const std::string windowTitle = "War Strategy - Milestone 6 (Build: " __DATE__ " " __TIME__ ")";
+    const std::string windowTitle = "War Strategy - Milestone 7 (Build: " __DATE__ " " __TIME__ ")";
     if (!m_window.init(windowTitle, initialWidth, initialHeight)) {
         std::cerr << "[GameApp] Khoi tao cua so that bai!" << std::endl;
         return false;
@@ -72,20 +84,64 @@ bool GameApp::init() {
     };
     m_textRenderer.init(fontCandidates, 18);
 
-    // 4. Nạp cấu hình sim và sinh bản đồ lần đầu với seed ban đầu
+    // 4. Nạp cấu hình sim và sinh bản đồ lần đầu với seed ban đầu (regenerateMap tự căn camera vào quân Player)
     if (!m_worldSim.loadConfig()) {
         std::cerr << "[GameApp] LOI: Khong the nap cau hinh game_config.json!" << std::endl;
         return false;
     }
-    regenerateMap(m_currentSeed);
 
-    // 5. Khởi tạo vị trí camera vào trung tâm bản đồ
-    int worldW = m_worldMap.getWorldWidth();
-    int worldH = m_worldMap.getWorldHeight();
-    float startX = (static_cast<float>(worldW) - initialWidth) * 0.5f;
-    float startY = (static_cast<float>(worldH) - initialHeight) * 0.5f;
-    m_camera.setPosition(startX, startY);
-    m_camera.clampToBounds(initialWidth, initialHeight, worldW, worldH);
+    // M8: Nếu có nạp file Replay, tải file và đồng bộ seed
+    if (!m_replayPath.empty()) {
+        if (m_replayPlayer.loadFromFile(m_replayPath)) {
+            m_isReplayMode = true;
+            m_aiEnabled = false; // Tắt AI live khi xem replay
+            m_aiSourceLabel = "REPLAY";
+            m_currentSeed = m_replayPlayer.getSeed();
+            std::cout << "[GameApp] REPLAY MODE: Nap thanh cong " << m_replayPath
+                      << " | Seed: " << m_currentSeed
+                      << " | Records: " << m_replayPlayer.getRecordCount()
+                      << " | FinalTick: " << m_replayPlayer.getFinalTick() << std::endl;
+            m_notificationText = "[REPLAY MODE] Da nap replay thanh cong!";
+            m_notificationTimer = 3.0f;
+        } else {
+            std::cerr << "[GameApp] LOI: Khong the mo file replay: " << m_replayPath << std::endl;
+        }
+    }
+
+    // M9: Nạp bộ não AI đã huấn luyện nếu không ở chế độ Replay
+    if (!m_isReplayMode) {
+        if (!m_aiParamsPath.empty()) {
+            ai::AiParams loadedParams;
+            ai::AiTrainingMetadata loadedMeta;
+            if (ai::loadTrainedAiProfile(m_aiParamsPath, loadedParams, &loadedMeta)) {
+                m_enemyAI.setParams(loadedParams);
+                std::filesystem::path p(m_aiParamsPath);
+                m_aiSourceLabel = "AI: Custom (" + p.filename().string() + ")";
+                std::cout << "[GameApp] Da nap AiParams tu: " << m_aiParamsPath << std::endl;
+            } else {
+                std::cerr << "[GameApp] Khong the nap AiParams tu " << m_aiParamsPath << ", fallback mac dinh.\n";
+                m_aiSourceLabel = "AI: Default";
+            }
+        } else if (std::filesystem::exists("data/ai_best_params.json")) {
+            ai::AiParams loadedParams;
+            ai::AiTrainingMetadata loadedMeta;
+            if (ai::loadTrainedAiProfile("data/ai_best_params.json", loadedParams, &loadedMeta)) {
+                m_enemyAI.setParams(loadedParams);
+                if (loadedMeta.generation > 0) {
+                    m_aiSourceLabel = "AI: Trained (Gen " + std::to_string(loadedMeta.generation) + ")";
+                } else {
+                    m_aiSourceLabel = "AI: Trained";
+                }
+                std::cout << "[GameApp] Phat hien va nap thanh cong data/ai_best_params.json (" << m_aiSourceLabel << ")" << std::endl;
+            } else {
+                m_aiSourceLabel = "AI: Default";
+            }
+        } else {
+            m_aiSourceLabel = "AI: Default";
+        }
+    }
+
+    regenerateMap(m_currentSeed);
 
     m_running = true;
     return true;
@@ -134,8 +190,9 @@ void GameApp::processEvents() {
         } else if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 m_running = false;
+#ifndef NDEBUG
             } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F1) {
-                // TODO: [DEBUG ONLY - F1] Xóa chế độ điều khiển thử nghiệm này khi tích hợp AI
+                // [DEBUG ONLY - F1] Chế độ điều khiển thử nghiệm đổi phe
                 m_worldSim.toggleControlledFaction();
                 // Bỏ chọn toàn bộ quân khi đổi phe (M6)
                 for (auto& u : m_worldSim.getUnits()) {
@@ -152,7 +209,7 @@ void GameApp::processEvents() {
                     m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(vf), m_worldSim.getUnits(), vf, m_debugFogDisabled);
                 }
             } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F2) {
-                // TODO: [DEBUG ONLY - F2] Bật/tắt sương mù chiến tranh để debug
+                // [DEBUG ONLY - F2] Bật/tắt sương mù chiến tranh để debug
                 m_debugFogDisabled = !m_debugFogDisabled;
                 m_notificationText = m_debugFogDisabled ? "[DEBUG F2] Suong mu: TAT (Hien toan ban do)"
                                                         : "[DEBUG F2] Suong mu: BAT (Theo tam nhin thuc te)";
@@ -162,9 +219,41 @@ void GameApp::processEvents() {
                     m_mapRenderer.updateFogTexture(m_window.getSDLRenderer(), m_worldSim.getFogMap(vf), m_worldMap.getWidth(), m_worldMap.getHeight(), m_debugFogDisabled);
                     m_mapRenderer.updateMinimapTexture(m_window.getSDLRenderer(), m_worldMap, m_worldSim.getFogMap(vf), m_worldSim.getUnits(), vf, m_debugFogDisabled);
                 }
+#endif
+            } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_F3) {
+                // [DEBUG F3] Bật/tắt AI phe Enemy để kiểm thử
+                m_aiEnabled = !m_aiEnabled;
+                m_notificationText = m_aiEnabled ? "[DEBUG F3] AI Phe Do (Enemy): BAT"
+                                                 : "[DEBUG F3] AI Phe Do (Enemy): TAT (Dung yen)";
+                m_notificationTimer = 2.0f;
+            } else if (event.key.repeat == 0 && event.key.keysym.sym == SDLK_SPACE && m_isReplayMode) {
+                m_replayPaused = !m_replayPaused;
+                m_notificationText = m_replayPaused ? "[REPLAY] TAM DUNG (PAUSED)" : "[REPLAY] TIEP TUC (PLAYING)";
+                m_notificationTimer = 1.5f;
+            } else if (event.key.repeat == 0 && m_isReplayMode &&
+                       (event.key.keysym.sym == SDLK_LEFTBRACKET || event.key.keysym.sym == SDLK_MINUS || event.key.keysym.sym == SDLK_KP_MINUS)) {
+                if (m_replaySpeed >= 8.0f) m_replaySpeed = 4.0f;
+                else if (m_replaySpeed >= 4.0f) m_replaySpeed = 2.0f;
+                else if (m_replaySpeed >= 2.0f) m_replaySpeed = 1.0f;
+                else if (m_replaySpeed >= 1.0f) m_replaySpeed = 0.5f;
+                m_notificationText = "[REPLAY] Toc do: " + std::to_string(m_replaySpeed).substr(0, 3) + "x";
+                m_notificationTimer = 1.5f;
+            } else if (event.key.repeat == 0 && m_isReplayMode &&
+                       (event.key.keysym.sym == SDLK_RIGHTBRACKET || event.key.keysym.sym == SDLK_PLUS || event.key.keysym.sym == SDLK_EQUALS || event.key.keysym.sym == SDLK_KP_PLUS)) {
+                if (m_replaySpeed <= 0.5f) m_replaySpeed = 1.0f;
+                else if (m_replaySpeed <= 1.0f) m_replaySpeed = 2.0f;
+                else if (m_replaySpeed <= 2.0f) m_replaySpeed = 4.0f;
+                else if (m_replaySpeed <= 4.0f) m_replaySpeed = 8.0f;
+                m_notificationText = "[REPLAY] Toc do: " + std::to_string(m_replaySpeed).substr(0, 3) + "x";
+                m_notificationTimer = 1.5f;
             } else if (event.key.repeat == 0 &&
                        (event.key.keysym.scancode == SDL_SCANCODE_R ||
                         event.key.keysym.scancode == SDL_SCANCODE_F5)) {
+                if (m_isReplayMode) {
+                    m_notificationText = "[REPLAY MODE] Khong the doi ban do khi dang phat replay!";
+                    m_notificationTimer = 2.0f;
+                    continue;
+                }
                 // Phím R và F5: sinh bản đồ mới với seed ngẫu nhiên
                 uint64_t oldSeed = m_currentSeed;
                 uint64_t newSeed = generateRandomSeed();
@@ -189,6 +278,11 @@ void GameApp::processEvents() {
                 // 1. Kiểm tra xem người dùng có click vào nút "Tao ban do moi" không
                 if (event.button.x >= btnRect.x && event.button.x <= btnRect.x + btnRect.w &&
                     event.button.y >= btnRect.y && event.button.y <= btnRect.y + btnRect.h) {
+                    if (m_isReplayMode) {
+                        m_notificationText = "[REPLAY MODE] Khong the doi ban do khi dang phat replay!";
+                        m_notificationTimer = 2.0f;
+                        continue;
+                    }
                     uint64_t oldSeed = m_currentSeed;
                     uint64_t newSeed = generateRandomSeed();
                     while (newSeed == oldSeed) {
@@ -213,6 +307,10 @@ void GameApp::processEvents() {
                     m_isBoxSelecting = true;
                 }
             } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                // Trong Replay Mode, khóa nhận lệnh điều khiển quân của người chơi
+                if (m_isReplayMode) {
+                    continue;
+                }
                 // Click chuột phải:
                 // M6: Chuột phải trên minimap ra lệnh di chuyển cho các chấm đang chọn tới điểm tương ứng
                 int targetTileX = 0;
@@ -373,12 +471,20 @@ void GameApp::update(float deltaTime) {
     }
 
     // Cập nhật mô phỏng sim với bước thời gian cố định 20 tick/giây qua accumulator
-    m_simAccumulator += deltaTime;
+    if (!m_isReplayMode || !m_replayPaused) {
+        float effectiveDt = m_isReplayMode ? (deltaTime * m_replaySpeed) : deltaTime;
+        m_simAccumulator += effectiveDt;
+    }
     const int tps = m_worldSim.getConfig().getTickRate();
     const float tickInterval = (tps > 0) ? (1.0f / static_cast<float>(tps)) : 0.05f;
     bool simTicked = false;
     while (m_simAccumulator >= tickInterval) {
         m_simAccumulator -= tickInterval;
+        if (m_isReplayMode) {
+            m_replayPlayer.applyCommandsForTick(m_worldSim.getCurrentTick(), m_worldSim);
+        } else if (m_aiEnabled) {
+            m_enemyAI.update(m_worldSim);
+        }
         m_worldSim.tick();
         simTicked = true;
     }
@@ -466,14 +572,18 @@ void GameApp::render() {
     SDL_Color seedColor{255, 220, 100, 255};
     m_textRenderer.renderText(renderer, seedBuffer, 16, 42, seedColor, true);
 
-    // TODO: [DEBUG ONLY - F1 & F2]
+#ifndef NDEBUG
+    // [DEBUG ONLY - F1 & F2 & F3]
     bool isPlayerCtrl = (viewingFaction == sim::Faction::Player);
-    char f1Buffer[128];
-    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s",
+    char f1Buffer[160];
+    std::snprintf(f1Buffer, sizeof(f1Buffer), "[F1] Phe: %s  |  [F2] Suong mu: %s  |  [F3] AI: %s (%s)",
                   isPlayerCtrl ? "PHE XANH (Player)" : "PHE DO (Enemy)",
-                  m_debugFogDisabled ? "TAT (Debug)" : "BAT");
+                  m_debugFogDisabled ? "TAT (Debug)" : "BAT",
+                  m_aiEnabled ? "BAT" : "TAT",
+                  m_aiSourceLabel.c_str());
     SDL_Color f1Color = isPlayerCtrl ? SDL_Color{100, 200, 255, 255} : SDL_Color{255, 120, 110, 255};
     m_textRenderer.renderText(renderer, f1Buffer, 16, 68, f1Color, true);
+#endif
 
     // 4. Hiển thị đồng hồ thời gian còn lại của trận đấu ở giữa phía trên màn hình (M5)
     int remainingSec = m_worldSim.getRemainingTimeSec();
@@ -492,6 +602,27 @@ void GameApp::render() {
     SDL_RenderDrawRect(renderer, &timerBg);
     SDL_Color timerColor{235, 245, 255, 255};
     m_textRenderer.renderText(renderer, timerBuffer, timerX + 16, timerY + 7, timerColor, false);
+
+    // 4b. Hiển thị banner Replay Mode nổi bật (M8)
+    if (m_isReplayMode) {
+        char repBuf[160];
+        std::snprintf(repBuf, sizeof(repBuf), "[REPLAY MODE] %s (%.1fx) | Tick: %llu/%llu | [Space: Pause, [-][+]: Speed, F2: FOW]",
+                      m_replayPaused ? "PAUSED" : "PLAYING",
+                      m_replaySpeed,
+                      static_cast<unsigned long long>(m_worldSim.getCurrentTick()),
+                      static_cast<unsigned long long>(m_replayPlayer.getFinalTick()));
+        int rW = 680;
+        int rH = 32;
+        int rX = (winW - rW) / 2;
+        int rY = 56;
+        SDL_Rect rBg{rX, rY, rW, rH};
+        SDL_SetRenderDrawColor(renderer, 25, 25, 40, 235);
+        SDL_RenderFillRect(renderer, &rBg);
+        SDL_SetRenderDrawColor(renderer, 255, 200, 50, 255);
+        SDL_RenderDrawRect(renderer, &rBg);
+        SDL_Color repColor{255, 225, 90, 255};
+        m_textRenderer.renderText(renderer, repBuf, rX + 14, rY + 7, repColor, false);
+    }
 
     // 5. Hiển thị thông báo tạm nếu đang trong thời gian timer
     if (m_notificationTimer > 0.0f) {

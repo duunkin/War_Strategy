@@ -1,11 +1,20 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "sim/config/SimConfig.hpp"
 #include "sim/map/WorldMap.hpp"
 #include "sim/units/Unit.hpp"
 #include "sim/WorldSim.hpp"
+#include "mapgen/MapGenerator.hpp"
+#include "mapgen/MapGenConfig.hpp"
 
 #include <iostream>
-#include <cassert>
 #include <cmath>
+#include <unordered_set>
+#include <fstream>
+#include <cstdio>
 
 int main() {
     std::cout << "==================================================\n";
@@ -237,6 +246,152 @@ int main() {
         assert(totalForest == 1917);
     }
     std::cout << "-> TEST 5 THANH CONG: Tich luy toc do di chuyen 20 tick/s bao toan 100% so nguyen!" << std::endl;
+
+    // -------------------------------------------------------------
+    // Test 6: Kiem tra vi tri spawn co dinh o 2 trung diem canh ben tren 20 seeds
+    // -------------------------------------------------------------
+    std::cout << "\n[TEST 6] Kiem tra spawn co dinh tai 2 trung diem canh ben tren 20 seed thuc te..." << std::endl;
+    {
+        mapgen::MapGenerator generator;
+        mapgen::MapGenConfig mapCfg;
+        sim::WorldMap realMap(128, 96, 32);
+
+        const uint64_t testSeeds[20] = {
+            1001ULL, 2022ULL, 3033ULL, 4044ULL, 5055ULL,
+            6066ULL, 7077ULL, 8088ULL, 9099ULL, 12345ULL,
+            54321ULL, 987654ULL, 1337ULL, 7777ULL, 88888ULL,
+            999999ULL, 11223344ULL, 55667788ULL, 99001122ULL, 31415926ULL
+        };
+
+        constexpr int expectedMidY = 48; // 96 / 2
+
+        for (int sIdx = 0; sIdx < 20; ++sIdx) {
+            uint64_t seed = testSeeds[sIdx];
+            generator.generate(realMap, seed, mapCfg);
+
+            sim::WorldSim sim(realMap);
+            assert(sim.loadConfig());
+            sim.spawnDivisions(seed);
+
+            const auto& units = sim.getUnits();
+            assert(units.size() == 60);
+
+            // Kiểm tra Anchor có nằm gần midY không
+            int pAnchorX = sim.getPlayerSpawnAnchorX();
+            int pAnchorY = sim.getPlayerSpawnAnchorY();
+            int eAnchorX = sim.getEnemySpawnAnchorX();
+            int eAnchorY = sim.getEnemySpawnAnchorY();
+
+            assert(pAnchorX >= 2 && pAnchorX < 64);
+            assert(eAnchorX >= 64 && eAnchorX < 126);
+            assert(std::abs(pAnchorY - expectedMidY) <= 8 && "Player anchor phai rat gan midY = 48!");
+            assert(std::abs(eAnchorY - expectedMidY) <= 8 && "Enemy anchor phai rat gan midY = 48!");
+
+            // Kiểm tra từng đơn vị của Player và Enemy
+            int playerSumX = 0, playerSumY = 0;
+            int enemySumX = 0, enemySumY = 0;
+            std::unordered_set<int> playerTileSet;
+            std::unordered_set<int> enemyTileSet;
+
+            for (const auto& u : units) {
+                int tx = u.getTileX();
+                int ty = u.getTileY();
+                int tileKey = ty * 1000 + tx;
+
+                sim::DetailedTerrainType dt = config.classifyTerrain(realMap, tx, ty);
+                assert(config.isPassable(dt, u.getDomain(), u.getType()) &&
+                       "Don vi phai dung tren o dia hinh hoan toan hop le!");
+
+                if (u.getDomain() == sim::UnitDomain::Sea) {
+                    assert((dt == sim::DetailedTerrainType::DeepSea || dt == sim::DetailedTerrainType::CoastalSea) &&
+                           "Tau chien phai o tren bien!");
+                } else if (u.getDomain() == sim::UnitDomain::Land) {
+                    assert(dt != sim::DetailedTerrainType::DeepSea && dt != sim::DetailedTerrainType::CoastalSea &&
+                           dt != sim::DetailedTerrainType::Mountain &&
+                           "Luc quan khong duoc o tren bien hoac tren nui!");
+                }
+
+                if (u.getFaction() == sim::Faction::Player) {
+                    assert(tx < 64 && "Player bat buoc o nua trai (Tay)!");
+                    playerSumX += tx;
+                    playerSumY += ty;
+                    assert(playerTileSet.find(tileKey) == playerTileSet.end() && "Khong duoc de quan Player trung o!");
+                    playerTileSet.insert(tileKey);
+                } else if (u.getFaction() == sim::Faction::Enemy) {
+                    assert(tx >= 64 && "Enemy bat buoc o nua phai (Dong)!");
+                    enemySumX += tx;
+                    enemySumY += ty;
+                    assert(enemyTileSet.find(tileKey) == enemyTileSet.end() && "Khong duoc de quan Enemy trung o!");
+                    enemyTileSet.insert(tileKey);
+                }
+            }
+
+            assert(playerTileSet.size() == 30);
+            assert(enemyTileSet.size() == 30);
+
+            float playerAvgY = static_cast<float>(playerSumY) / 30.0f;
+            float enemyAvgY = static_cast<float>(enemySumY) / 30.0f;
+            assert(std::abs(playerAvgY - static_cast<float>(expectedMidY)) <= 8.0f &&
+                   "Toa do Y trung binh cua quan Player phai tap trung quanh midY = 48!");
+            assert(std::abs(enemyAvgY - static_cast<float>(expectedMidY)) <= 8.0f &&
+                   "Toa do Y trung binh cua quan Enemy phai tap trung quanh midY = 48!");
+        }
+    }
+    std::cout << "-> TEST 6 THANH CONG: 20/20 seed thuc te deu spawn chuan xac tai 2 trung diem canh ben!" << std::endl;
+
+    // -------------------------------------------------------------
+    // Test 7: Kiem tra BOM UTF-16 (tu choi) va UTF-8 BOM (chap nhan)
+    // -------------------------------------------------------------
+    std::cout << "\n[TEST 7] Kiem tra phat hien BOM UTF-16 va chap nhan UTF-8 BOM..." << std::endl;
+    {
+        sim::SimConfig::clearCache();
+
+        // Doc noi dung hop le tu data/game_config.json
+        std::ifstream validIn("data/game_config.json", std::ios::binary);
+        assert(validIn.is_open());
+        std::string validJson((std::istreambuf_iterator<char>(validIn)), std::istreambuf_iterator<char>());
+        validIn.close();
+
+        // 7a. UTF-16 LE BOM (FF FE) phai bi tu choi
+        const std::string utf16LePath = "data/_test_tmp_utf16le.json";
+        {
+            std::ofstream out(utf16LePath, std::ios::binary);
+            out.put(static_cast<char>(0xFF));
+            out.put(static_cast<char>(0xFE));
+            out.write("{\0\n\0}\0", 6);
+        }
+        sim::SimConfig cfg16Le;
+        assert(!cfg16Le.loadFromFile(utf16LePath) && "UTF-16 LE BOM phai bi tu choi!");
+        std::remove(utf16LePath.c_str());
+
+        // 7b. UTF-16 BE BOM (FE FF) phai bi tu choi
+        const std::string utf16BePath = "data/_test_tmp_utf16be.json";
+        {
+            std::ofstream out(utf16BePath, std::ios::binary);
+            out.put(static_cast<char>(0xFE));
+            out.put(static_cast<char>(0xFF));
+            out.write("\0{\0}", 4);
+        }
+        sim::SimConfig cfg16Be;
+        assert(!cfg16Be.loadFromFile(utf16BePath) && "UTF-16 BE BOM phai bi tu choi!");
+        std::remove(utf16BePath.c_str());
+
+        // 7c. UTF-8 BOM (EF BB BF) phai duoc chap nhan
+        const std::string utf8BomPath = "data/_test_tmp_utf8bom.json";
+        {
+            std::ofstream out(utf8BomPath, std::ios::binary);
+            out.put(static_cast<char>(0xEF));
+            out.put(static_cast<char>(0xBB));
+            out.put(static_cast<char>(0xBF));
+            out.write(validJson.data(), static_cast<std::streamsize>(validJson.size()));
+        }
+        sim::SimConfig cfg8Bom;
+        assert(cfg8Bom.loadFromFile(utf8BomPath) && "UTF-8 BOM phai duoc chap nhan!");
+        assert(cfg8Bom.getAllUnitConfigs().size() == 11);
+        std::remove(utf8BomPath.c_str());
+        sim::SimConfig::clearCache();
+    }
+    std::cout << "-> TEST 7 THANH CONG: Phat hien UTF-16 BOM va chap nhan UTF-8 BOM chuan xac!" << std::endl;
 
     std::cout << "\n==================================================\n";
     std::cout << " ALL TESTS PASSED! MOC M3 JSON HOAN TOAN CHUAN XAC!\n";

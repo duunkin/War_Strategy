@@ -1,10 +1,14 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
+
 #include "mapgen/MapGenerator.hpp"
 #include "mapgen/MapGenConfig.hpp"
 #include "sim/map/WorldMap.hpp"
 
 #include <iostream>
 #include <vector>
-#include <cassert>
 #include <cstdlib>
 
 int main() {

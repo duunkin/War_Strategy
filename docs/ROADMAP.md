@@ -32,14 +32,33 @@
 - [ ] **M6: Giao diện người dùng (UI) & Âm thanh**
   - Thanh thông tin đơn vị, ghép nhóm phím tắt (Ctrl+1..9), âm thanh hiệu ứng.
 
-- [ ] **M7: Trí tuệ nhân tạo (AI) chiến thuật**
-  - Cây hành vi (Behavior Tree), chiến thuật đánh úp, rút lui, bảo vệ Tư lệnh.
+- [x] **M7: Trí tuệ nhân tạo (AI) chiến thuật**
+  - AI chiến thuật độc lập phe phái (`TacticalAI`, `AiParams`) thuần C++20, không phụ thuộc render.
+  - Tuân thủ 100% sương mù chiến tranh (Fog of War) và cơ chế tàng hình của Tư lệnh.
+  - Tất định 100% qua bộ sinh số `FastRng`, xuất lệnh qua struct `Command` chuẩn.
+  - Chiến thuật 5 quân chủng: Tư lệnh né giao tranh tháo chạy về rừng/đồi; Caesar stand-off cự ly xa; Gepard đánh chặn máy bay và bảo vệ chỉ huy; Su-57/B-2 trinh sát, oanh tạc mục tiêu giá trị cao và né Gepard; Tàu chiến Mogami/Asagiri tuần duyên và yểm trợ hỏa lực ven bờ; Tăng thiết giáp và bộ binh trinh sát đa hướng, chiếm giữ rừng/đồi, rút lui khi trọng thương.
+  - Phím `F3` bật/tắt AI phe Enemy trong runtime để kiểm thử.
+  - *Kết quả*: Hoàn thành, 100% test suites passed.
 
-- [ ] **M8: Chế độ Headless, AI vs AI, Replay**
-  - Chạy mô phỏng không giao diện tốc độ cao, ghi log lệnh và phát lại trận đấu.
+- [x] **M8: Chế độ Headless, AI vs AI, Replay**
+  - Tách thư viện lõi tĩnh `war_sim_core` thuần C++20 không phụ thuộc SDL2/Render; executable `War_Strategy_Headless` độc lập tốc độ cao (>1400 ticks/sec, ~70x realtime).
+  - Telemetry suy nghĩ và trạng thái AI (`AiThoughtSnapshot`, `AiTelemetry`) hiển thị chính xác 2 dòng căn cột sạch trên CMD (hỗ trợ cờ `--live`, `--scroll`, `--quiet`).
+  - Hệ thống Replay tất định 100% (`ReplayRecorder`, `ReplayPlayer`): lưu/phát lại từng lệnh `Command` theo tick chuẩn JSON; cùng seed + replay cho ra kết quả khớp 100% từng đơn vị.
+  - Tích hợp trình phát Replay vào bản đồ họa `War_Strategy --replay <file>` với phím điều khiển `Space` (Pause/Resume), `[`/`]` (chỉnh tốc độ 0.5x..8x), HUD hiển thị tiến độ và trạng thái.
+  - Bộ runner headless CLI hỗ trợ `--matches`, `--seed`, `--max-ticks`, nạp/ghi đè tham số `AiParams`, xuất log CSV tổng hợp và lưu replay hàng loạt.
+  - Bộ kiểm thử tự động `tests/test_replay.cpp` kiểm tra tính tất định 100% giữa Live AI vs Replay Playback, Telemetry snapshot và Batch CSV log.
+  - *Kết quả*: Hoàn thành, 7/7 test suites passed 100%.
 
-- [ ] **M9: AI tự tối ưu & Huấn luyện**
-  - AI tự tinh chỉnh tham số sau các trận đấu.
+- [x] **M9: AI tự tối ưu & Huấn luyện (Evolutionary Self-Play & Post-Loss Adaptation)**
+  - Chuẩn hóa không gian tham số `AiParams` với hàm `clampParams()` kiểm soát chặt chẽ biên vật lý/chiến thuật (chống NaN/Inf, lag A* hoặc đơ).
+  - Module huấn luyện độc lập thuần C++20 `AiTrainer` trong `war_sim_core` (không phụ thuộc SDL2/Render), hỗ trợ 2 thuật toán:
+    * **Tiến hóa quần thể (`--mode evo`)**: Quần thể tham số tiến hóa qua nhiều thế hệ, đánh giá công bằng qua Mirror Match (đổi sân Player Blue/Enemy Red trên cùng seed) với Baseline M7 và Hall of Fame; chọn lọc tinh hoa (Elitism), lai ghép (Crossover) và đột biến hạ nhiệt (Annealing Mutation) tất định qua `FastRng`.
+    * **Thích nghi sau trận thua (`--mode adapt`)**: Chẩn đoán nguyên nhân thất bại (`MatchDiagnosis`: Tư lệnh chết, tiêu hao quân số, áp đảo hỏa lực/hết giờ), tinh chỉnh tham số có định hướng và tái đấu kiểm chứng (Validation Rematch).
+  - Hàm điểm Fitness liên tục có độ phân giải cao kết hợp điểm kết quả, thưởng thắng sớm và điểm định hình (shaping: Troops, Units, CmdHP).
+  - Executable huấn luyện đa luồng độc lập `War_Strategy_Train` hỗ trợ cờ CLI phong phú (`--mode`, `--generations`, `--population`, `--seeds-per-gen`, `--threads`, `--resume`, `--out-best`, `--log`, `--save-showcase-replay`), hiển thị tiến độ trực quan kèm 2 dòng telemetry suy nghĩ AI1/AI2 theo thời gian thực từ Worker 0, ngắt mượt SIGINT lưu checkpoint.
+  - Tích hợp nạp profile huấn luyện vào game SDL2 `War_Strategy` qua cờ `--ai-params <file>` hoặc tự động nạp `data/ai_best_params.json` nếu có, hiển thị nhãn nguồn trên HUD (`AI: Trained` / `AI: Default`).
+  - Bộ kiểm thử tự động `tests/test_train.cpp` kiểm tra 4/4 kịch bản: Params Bounds & JSON Round-Trip, Mirror Match Determinism, Post-Loss Adaptation và Mini Evolution End-to-End đa luồng.
+  - *Kết quả*: Hoàn thành, 8/8 test suites passed 100%.
 
 - [ ] **M10: Hoàn thiện, cân bằng & Đóng gói đa nền tảng**
   - Chơi ván đấu trọn vẹn, đóng gói phát hành Windows, Linux, macOS.

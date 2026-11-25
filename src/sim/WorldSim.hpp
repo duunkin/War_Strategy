@@ -10,8 +10,20 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <functional>
+#include <atomic>
 
 namespace sim {
+
+/**
+ * @brief Chế độ thứ tự ưu tiên xử lý giao chiến trong WorldSim (M9.10)
+ */
+enum class CombatOrderMode {
+    PlayerFirst = 0,    // Mặc định: ID tăng dần (1..60)
+    EnemyFirst = 1,     // ID giảm dần (60..1)
+    AlternateTicks = 2, // Chẵn: PlayerFirst, Lẻ: EnemyFirst
+    Simultaneous = 3    // Thu thập sát thương rồi áp dụng cùng lúc
+};
 
 /**
  * @brief Lớp WorldSim quản lý toàn bộ trạng thái mô phỏng game (thuần C++, không SDL, không float).
@@ -20,6 +32,9 @@ class WorldSim {
 public:
     explicit WorldSim(WorldMap& map);
     ~WorldSim() = default;
+
+    void setCombatOrderMode(CombatOrderMode mode) { m_combatOrderMode = mode; }
+    [[nodiscard]] CombatOrderMode getCombatOrderMode() const { return m_combatOrderMode; }
 
     // Nạp cấu hình từ data/game_config.json
     bool loadConfig();
@@ -33,6 +48,16 @@ public:
 
     // Tiện ích gửi lệnh di chuyển cho danh sách đơn vị tới ô đích
     void queueMoveCommand(const std::vector<uint32_t>& unitIds, int targetTileX, int targetTileY);
+
+    // Hook lắng nghe các lệnh được gửi vào WorldSim (cho ReplayRecorder)
+    using CommandHook = std::function<void(uint64_t tick, const Command& cmd)>;
+    void setCommandHook(CommandHook hook) { m_commandHook = std::move(hook); }
+
+    // Chế độ im lặng (không in log sinh quân WorldSim ra stdout)
+    void setQuiet(bool q) { m_quiet = q; }
+    [[nodiscard]] bool isQuiet() const { return m_quiet; }
+    static void setGlobalQuiet(bool q) { s_globalQuiet.store(q); }
+    static bool isGlobalQuiet() { return s_globalQuiet.load(); }
 
     // Thực hiện 1 bước mô phỏng cố định (1 tick)
     void tick();
@@ -66,10 +91,17 @@ public:
         m_controlledFaction = (m_controlledFaction == Faction::Player) ? Faction::Enemy : Faction::Player;
     }
 
+    // Tọa độ trung điểm neo xuất hiện quân (Spawn Anchors)
+    [[nodiscard]] int getPlayerSpawnAnchorX() const { return m_playerSpawnAnchorX; }
+    [[nodiscard]] int getPlayerSpawnAnchorY() const { return m_playerSpawnAnchorY; }
+    [[nodiscard]] int getEnemySpawnAnchorX() const { return m_enemySpawnAnchorX; }
+    [[nodiscard]] int getEnemySpawnAnchorY() const { return m_enemySpawnAnchorY; }
+
     // Sương mù chiến tranh & Tầm nhìn (M6)
     void updateVision();
     void initElevationGrid();
     [[nodiscard]] const std::vector<uint8_t>& getElevationGrid() const { return m_elevationGrid; }
+    [[nodiscard]] DetailedTerrainType getDetailedTerrain(int x, int y) const;
     [[nodiscard]] const std::vector<uint8_t>& getFogMap(Faction f) const {
         return (f == Faction::Player) ? m_fogPlayer : m_fogEnemy;
     }
@@ -86,6 +118,7 @@ private:
     SimConfig            m_config;
     std::vector<Unit>    m_units;
     std::vector<Command> m_commandQueue;
+    CommandHook          m_commandHook;
     uint64_t             m_currentTick{0};
 
     // Bộ sinh số ngẫu nhiên cho chiến đấu, lưu trữ trạng thái tất định
@@ -100,11 +133,25 @@ private:
     // Phe đang được điều khiển (Mặc định: Player, F1 đổi sang Enemy để debug)
     Faction              m_controlledFaction{Faction::Player};
 
+    // Tọa độ trung điểm neo xuất hiện quân 2 bên bờ biển
+    int                  m_playerSpawnAnchorX{10};
+    int                  m_playerSpawnAnchorY{48};
+    int                  m_enemySpawnAnchorX{117};
+    int                  m_enemySpawnAnchorY{48};
+
     // Sương mù chiến tranh cho từng phe (M6)
     std::vector<uint8_t> m_elevationGrid;
+    std::vector<uint8_t> m_detailedTerrainGrid;
     std::vector<uint8_t> m_fogPlayer;
     std::vector<uint8_t> m_fogEnemy;
+    std::vector<uint16_t> m_visiblePlayerIndices;
+    std::vector<uint16_t> m_visibleEnemyIndices;
+    std::vector<uint32_t> m_aliveIdsScratch;
     double               m_lastVisionUpdateTimeMs{0.0};
+    CombatOrderMode      m_combatOrderMode{CombatOrderMode::Simultaneous};
+
+    bool                 m_quiet{false};
+    static inline std::atomic<bool> s_globalQuiet{false};
 };
 
 } // namespace sim

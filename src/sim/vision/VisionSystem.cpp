@@ -31,14 +31,16 @@ bool VisionSystem::isLineOfSightClear(int x0, int y0, int h0,
     while (x != x1 || y != y1) {
         if (x != x0 || y != y0) {
             int hMid = elevationGrid ? elevationGrid[y * mapWidth + x] : 0;
-            int64_t losNum = static_cast<int64_t>(steps - k) * h0 + static_cast<int64_t>(k) * h1;
-            int64_t midNum = static_cast<int64_t>(hMid) * steps;
+            if (hMid > 0) {
+                int64_t losNum = static_cast<int64_t>(steps - k) * h0 + static_cast<int64_t>(k) * h1;
+                int64_t midNum = static_cast<int64_t>(hMid) * steps;
 
-            if (midNum > losNum) {
-                return false;
-            }
-            if (midNum == losNum && hMid >= 1 && h0 == h1) {
-                return false;
+                if (midNum > losNum) {
+                    return false;
+                }
+                if (midNum == losNum && h0 == h1) {
+                    return false;
+                }
             }
         }
 
@@ -83,14 +85,16 @@ bool VisionSystem::isLineOfSightClear(int x0, int y0, int h0,
     while (x != x1 || y != y1) {
         if (x != x0 || y != y0) {
             int hMid = getElevationFunc ? getElevationFunc(x, y) : 0;
-            int64_t losNum = static_cast<int64_t>(steps - k) * h0 + static_cast<int64_t>(k) * h1;
-            int64_t midNum = static_cast<int64_t>(hMid) * steps;
+            if (hMid > 0) {
+                int64_t losNum = static_cast<int64_t>(steps - k) * h0 + static_cast<int64_t>(k) * h1;
+                int64_t midNum = static_cast<int64_t>(hMid) * steps;
 
-            if (midNum > losNum) {
-                return false;
-            }
-            if (midNum == losNum && hMid >= 1 && h0 == h1) {
-                return false;
+                if (midNum > losNum) {
+                    return false;
+                }
+                if (midNum == losNum && h0 == h1) {
+                    return false;
+                }
             }
         }
 
@@ -114,7 +118,8 @@ void VisionSystem::updateFactionVision(Faction faction,
                                        const WorldMap& map,
                                        const SimConfig& config,
                                        const uint8_t* elevationGrid,
-                                       std::vector<uint8_t>& fogMap) {
+                                       std::vector<uint8_t>& fogMap,
+                                       std::vector<uint16_t>* outVisibleIndices) {
     int width = map.getWidth();
     int height = map.getHeight();
     size_t totalTiles = static_cast<size_t>(width * height);
@@ -124,9 +129,21 @@ void VisionSystem::updateFactionVision(Faction faction,
     }
 
     // Bước 1: Chuyển các ô đang Visible (2) về Explored (1)
-    for (size_t i = 0; i < totalTiles; ++i) {
-        if (fogMap[i] == static_cast<uint8_t>(FogState::Visible)) {
-            fogMap[i] = static_cast<uint8_t>(FogState::Explored);
+    if (outVisibleIndices && !outVisibleIndices->empty()) {
+        for (uint16_t idx : *outVisibleIndices) {
+            if (idx < totalTiles && fogMap[idx] == static_cast<uint8_t>(FogState::Visible)) {
+                fogMap[idx] = static_cast<uint8_t>(FogState::Explored);
+            }
+        }
+        outVisibleIndices->clear();
+    } else {
+        for (size_t i = 0; i < totalTiles; ++i) {
+            if (fogMap[i] == static_cast<uint8_t>(FogState::Visible)) {
+                fogMap[i] = static_cast<uint8_t>(FogState::Explored);
+            }
+        }
+        if (outVisibleIndices) {
+            outVisibleIndices->clear();
         }
     }
 
@@ -172,6 +189,9 @@ void VisionSystem::updateFactionVision(Faction faction,
                 int h1 = elevationGrid ? elevationGrid[idx] : 0;
                 if (isLineOfSightClear(ux, uy, h0, tx, ty, h1, elevationGrid, width, airElevation)) {
                     fogMap[idx] = static_cast<uint8_t>(FogState::Visible);
+                    if (outVisibleIndices) {
+                        outVisibleIndices->push_back(static_cast<uint16_t>(idx));
+                    }
                 }
             }
         }

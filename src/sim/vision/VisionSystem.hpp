@@ -63,7 +63,8 @@ public:
                                     const WorldMap& map,
                                     const SimConfig& config,
                                     const uint8_t* elevationGrid,
-                                    std::vector<uint8_t>& fogMap);
+                                    std::vector<uint8_t>& fogMap,
+                                    std::vector<uint16_t>* outVisibleIndices = nullptr);
 
     static void updateFactionVision(Faction faction,
                                     const std::vector<Unit>& units,

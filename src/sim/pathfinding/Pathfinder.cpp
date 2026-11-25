@@ -1,5 +1,4 @@
 #include "sim/pathfinding/Pathfinder.hpp"
-#include <queue>
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -15,6 +14,56 @@ struct AStarNode {
         return fCost > o.fCost;
     }
 };
+
+namespace {
+
+struct PathScratch {
+    std::vector<uint32_t> visitedStamp;
+    std::vector<int>      gCosts;
+    std::vector<int>      parent;
+    std::vector<uint32_t> closedStamp;
+    std::vector<AStarNode> openHeap;
+    uint32_t              currentStamp{1};
+
+    void ensureCapacity(size_t totalTiles) {
+        if (visitedStamp.size() < totalTiles) {
+            visitedStamp.assign(totalTiles, 0);
+            gCosts.resize(totalTiles, 0);
+            parent.resize(totalTiles, -1);
+            closedStamp.assign(totalTiles, 0);
+            currentStamp = 1;
+        }
+    }
+
+    void reset(size_t totalTiles) {
+        ensureCapacity(totalTiles);
+        currentStamp++;
+        if (currentStamp == 0) { // Xử lý tràn số hiếm gặp sau 4 tỷ lần gọi
+            visitedStamp.assign(totalTiles, 0);
+            closedStamp.assign(totalTiles, 0);
+            currentStamp = 1;
+        }
+        openHeap.clear();
+    }
+};
+
+static thread_local PathScratch tl_scratch;
+
+inline DetailedTerrainType getFastDetailedTerrain(const WorldMap& map, const SimConfig& config,
+                                                 int x, int y, UnitDomain domain) {
+    TerrainType raw = map.getTile(x, y);
+    if (domain == UnitDomain::Land) {
+        if (raw == TerrainType::Sea) return DetailedTerrainType::DeepSea; // Biển không thể đi với lục quân
+        return config.classifyTerrain(map, x, y);
+    }
+    if (domain == UnitDomain::Sea) {
+        if (raw != TerrainType::Sea && raw != TerrainType::Lake) return DetailedTerrainType::Plain; // Đất liền không đi được
+        return (raw == TerrainType::Lake) ? DetailedTerrainType::CoastalSea : DetailedTerrainType::DeepSea;
+    }
+    return config.classifyTerrain(map, x, y);
+}
+
+} // namespace
 
 PathResult Pathfinder::findPath(const WorldMap& map,
                                const SimConfig& config,
@@ -52,11 +101,9 @@ PathResult Pathfinder::findPath(const WorldMap& map,
     size_t totalTiles = static_cast<size_t>(width * height);
     constexpr int INF_COST = 1000000000;
 
-    std::vector<int> gCosts(totalTiles, INF_COST);
-    std::vector<int> parent(totalTiles, -1);
-    std::vector<bool> closed(totalTiles, false);
-
-    std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> openSet;
+    tl_scratch.reset(totalTiles);
+    auto& openHeap = tl_scratch.openHeap;
+    uint32_t stamp = tl_scratch.currentStamp;
 
     auto getIdx = [width](int x, int y) -> size_t {
         return static_cast<size_t>(y * width + x);
@@ -73,8 +120,9 @@ PathResult Pathfinder::findPath(const WorldMap& map,
     };
 
     size_t startIdx = getIdx(start.x, start.y);
-    gCosts[startIdx] = 0;
-    openSet.push({start, octileHeuristic(start.x, start.y, target.x, target.y), 0});
+    tl_scratch.visitedStamp[startIdx] = stamp;
+    tl_scratch.gCosts[startIdx] = 0;
+    openHeap.push_back({start, octileHeuristic(start.x, start.y, target.x, target.y), 0});
 
     // Theo dõi ô đến được có khoảng cách Euclid gần đích target nhất để phục vụ fallback khi đích không đến được
     TileCoord closestReachable = start;
@@ -87,13 +135,14 @@ PathResult Pathfinder::findPath(const WorldMap& map,
     constexpr int dx[8] = {1, -1, 0, 0, 1, -1, 1, -1};
     constexpr int dy[8] = {0, 0, 1, -1, 1, 1, -1, -1};
 
-    while (!openSet.empty()) {
-        AStarNode current = openSet.top();
-        openSet.pop();
+    while (!openHeap.empty()) {
+        std::pop_heap(openHeap.begin(), openHeap.end(), std::greater<AStarNode>());
+        AStarNode current = openHeap.back();
+        openHeap.pop_back();
 
         size_t currentIdx = getIdx(current.coord.x, current.coord.y);
-        if (closed[currentIdx]) continue;
-        closed[currentIdx] = true;
+        if (tl_scratch.closedStamp[currentIdx] == stamp) continue;
+        tl_scratch.closedStamp[currentIdx] = stamp;
 
         // Cập nhật ô đến được gần đích nhất
         int64_t dSq = static_cast<int64_t>(current.coord.x - target.x) * (current.coord.x - target.x) +
@@ -115,9 +164,9 @@ PathResult Pathfinder::findPath(const WorldMap& map,
             if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
 
             size_t nextIdx = getIdx(nx, ny);
-            if (closed[nextIdx]) continue;
+            if (tl_scratch.closedStamp[nextIdx] == stamp) continue;
 
-            DetailedTerrainType dt = config.classifyTerrain(map, nx, ny);
+            DetailedTerrainType dt = getFastDetailedTerrain(map, config, nx, ny, domain);
             int speedPercent = config.getSpeedMultiplierPercent(dt, domain, unitType);
             if (speedPercent <= 0) continue; // Ô không đi được
 
@@ -130,8 +179,8 @@ PathResult Pathfinder::findPath(const WorldMap& map,
                 int adjX2 = current.coord.x;
                 int adjY2 = current.coord.y + dy[dir];
 
-                DetailedTerrainType dt1 = config.classifyTerrain(map, adjX1, adjY1);
-                DetailedTerrainType dt2 = config.classifyTerrain(map, adjX2, adjY2);
+                DetailedTerrainType dt1 = getFastDetailedTerrain(map, config, adjX1, adjY1, domain);
+                DetailedTerrainType dt2 = getFastDetailedTerrain(map, config, adjX2, adjY2, domain);
 
                 bool pass1 = config.isPassable(dt1, domain, unitType);
                 bool pass2 = config.isPassable(dt2, domain, unitType);
@@ -148,11 +197,15 @@ PathResult Pathfinder::findPath(const WorldMap& map,
             int stepCost = isDiagonal ? ((baseStepCost * 1414) / 1000) : baseStepCost;
 
             int tentativeG = current.gCost + stepCost;
-            if (tentativeG < gCosts[nextIdx]) {
-                gCosts[nextIdx] = tentativeG;
-                parent[nextIdx] = static_cast<int>(currentIdx);
+            int currentG = (tl_scratch.visitedStamp[nextIdx] == stamp) ? tl_scratch.gCosts[nextIdx] : INF_COST;
+
+            if (tentativeG < currentG) {
+                tl_scratch.visitedStamp[nextIdx] = stamp;
+                tl_scratch.gCosts[nextIdx] = tentativeG;
+                tl_scratch.parent[nextIdx] = static_cast<int>(currentIdx);
                 int h = octileHeuristic(nx, ny, target.x, target.y);
-                openSet.push({TileCoord{nx, ny}, tentativeG + h, tentativeG});
+                openHeap.push_back({TileCoord{nx, ny}, tentativeG + h, tentativeG});
+                std::push_heap(openHeap.begin(), openHeap.end(), std::greater<AStarNode>());
             }
         }
     }
@@ -172,7 +225,7 @@ PathResult Pathfinder::findPath(const WorldMap& map,
     while (curr != start) {
         path.push_back(curr);
         size_t cIdx = getIdx(curr.x, curr.y);
-        int pIdx = parent[cIdx];
+        int pIdx = (tl_scratch.visitedStamp[cIdx] == stamp) ? tl_scratch.parent[cIdx] : -1;
         if (pIdx < 0) break;
         curr = getCoord(static_cast<size_t>(pIdx));
     }
@@ -190,12 +243,13 @@ std::vector<TileCoord> Pathfinder::disperseDestinations(const WorldMap& map,
                                                        size_t unitCount) {
     std::vector<TileCoord> destinations;
     if (unitCount == 0) return destinations;
+    destinations.reserve(unitCount);
 
     int width = map.getWidth();
     int height = map.getHeight();
 
     // Nếu ô tâm centerTarget đi được, chọn nó đầu tiên
-    DetailedTerrainType centerDt = config.classifyTerrain(map, centerTarget.x, centerTarget.y);
+    DetailedTerrainType centerDt = getFastDetailedTerrain(map, config, centerTarget.x, centerTarget.y, domain);
     if (config.isPassable(centerDt, domain, unitType)) {
         destinations.push_back(centerTarget);
     }
@@ -217,7 +271,7 @@ std::vector<TileCoord> Pathfinder::disperseDestinations(const WorldMap& map,
 
                 if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
 
-                DetailedTerrainType dt = config.classifyTerrain(map, nx, ny);
+                DetailedTerrainType dt = getFastDetailedTerrain(map, config, nx, ny, domain);
                 if (!config.isPassable(dt, domain, unitType)) continue;
 
                 TileCoord cand{nx, ny};

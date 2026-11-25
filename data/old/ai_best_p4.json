@@ -1,0 +1,24 @@
+{
+    "metadata": {
+        "algorithm": "evo",
+        "fitness": 547.5828247070313,
+        "generation": 8,
+        "timestamp": "2026-11-20 22:58:20",
+        "trainedMatches": 480,
+        "winRateVsBaseline": 0.75
+    },
+    "params": {
+        "aggression": 0.5124951004981995,
+        "artilleryIdealRangeRatio": 0.8979017734527588,
+        "artilleryStandOffMargin": 1.807392954826355,
+        "commanderSafeRadiusTiles": 12.706153869628906,
+        "decisionIntervalTicks": 25,
+        "enableCommanderRetreat": true,
+        "enableUnitRetreat": true,
+        "focusFireWeight": 1.3288648128509521,
+        "retreatHpRatio": 0.32799994945526123,
+        "scoutingGroupCount": 3,
+        "scoutingWeight": 0.9098973274230957,
+        "targetMemoryTicks": 143
+    }
+}
