@@ -40,16 +40,30 @@ struct MapGenConfig {
     int forestFrequencyFP{1600};         // Tần số cho mảng rừng
     int forestThresholdFP{2000};         // Ngưỡng mọc rừng: noise > threshold sẽ mọc rừng (~35-40% đất bằng)
 
-    // 7. Tham số sinh Hồ nước ngọt nội địa (Lake)
-    int lakeCount{2};                    // Số lượng hồ tự nhiên ở các thung lũng nội địa
-    int lakeInlandMargin{10};            // Khoảng cách tối thiểu từ mép bản đồ để sinh hồ
-    int lakeExpansionNeighbors{2};       // Số ô lân cận mở rộng xung quanh tâm hồ (tạo hình dáng tự nhiên)
+    // 7. Tham số sinh Hồ nước ngọt nội địa (Lake) - M2 cập nhật
+    int lakeMax{6};                      // Số lượng hồ tối đa (ngẫu nhiên 0 đến lakeMax, mặc định 6)
+    int lakeMinRadius{2};                // Bán kính hồ tối thiểu (vài ô)
+    int lakeMaxRadius{3};                // Bán kính hồ tối đa (vài ô)
 
-    // 8. Tham số sinh Sông (River)
-    int riverCount{4};                   // Số lượng dòng sông khởi nguồn từ núi/đồi
-    int minRiverLength{5};               // Chiều dài tối thiểu để một con sông được công nhận
-    int maxRiverLength{120};             // Chiều dài tối đa trước khi kết thúc
-    int riverStartMargin{8};             // Tránh chọn nguồn sông quá sát mép bản đồ
+    // 8. Tham số sinh Sông và Bến cạn (River & Ford) - M2 cập nhật
+    int riverFordCount{3};               // Số lượng chỗ cạn (ford, mặc định 3, cho phép 0)
+    int riverFordMinDistance{15};         // Khoảng cách tối thiểu giữa các ford và từ ford tới đầu mút sông (>= 15 ô)
+    float riverMaxDeviation{3.0f};       // Độ lệch tối đa uốn lượn của sông (vài ô)
+    float minLandRatio{0.40f};           // Tỉ lệ diện tích đất tối thiểu mỗi nửa map (40%)
+    int riverMaxRetries{100};            // Số lần thử tối đa khi sinh trục sông
+
+    // 9. Căn cứ và vùng xuất phát 2 phe
+    int playerBaseX{20};
+    int playerBaseY{48};
+    int enemyBaseX{107};
+    int enemyBaseY{48};
+    int baseRadius{8};
+
+    // 10. Điểm mút sông cố định cho trường hợp đặc biệt (-1 nghĩa là sinh ngẫu nhiên theo seed)
+    int fixedP1X{-1};
+    int fixedP1Y{-1};
+    int fixedP2X{-1};
+    int fixedP2Y{-1};
 };
 
 } // namespace mapgen

@@ -22,7 +22,8 @@ enum class TerrainType : uint8_t {
     Mountain = 3, // Núi cao
     Forest = 4,   // Rừng rậm
     River = 5,    // Sông
-    Lake = 6      // Hồ nước ngọt nội địa
+    Lake = 6,     // Hồ nước ngọt nội địa
+    Ford = 7      // Bến cạn (chỗ cạn vượt sông)
 };
 
 class WorldMap {

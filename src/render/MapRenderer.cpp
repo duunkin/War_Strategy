@@ -39,6 +39,8 @@ SDL_Color MapRenderer::getTerrainColor(sim::TerrainType type) {
             return SDL_Color{65, 135, 215, 255};
         case sim::TerrainType::Lake:
             return SDL_Color{50, 115, 195, 255};
+        case sim::TerrainType::Ford:
+            return SDL_Color{130, 195, 220, 255};
         default:
             return SDL_Color{80, 80, 80, 255};
     }

@@ -247,6 +247,32 @@ bool SimConfig::loadFromFile(const std::string& filePath) {
               << m_scale.tilePixels << " px, ban do " << m_scale.mapWidth << "x" << m_scale.mapHeight
               << ", tickRate " << m_scale.tickRate << " tps" << std::endl;
 
+    // 4. Kiem tra va nap MapGenConfig
+    if (root.contains("mapgen") && root["mapgen"].is_object()) {
+        const auto& jMap = root["mapgen"];
+        m_mapGenConfig.riverFordCount = jMap.value("riverFordCount", 3);
+        m_mapGenConfig.lakeMax = jMap.value("lakeMax", 6);
+        m_mapGenConfig.riverFordMinDistance = jMap.value("riverFordMinDistance", 15);
+        m_mapGenConfig.riverMaxDeviation = jMap.value("riverMaxDeviation", 3.0f);
+        m_mapGenConfig.minLandRatio = jMap.value("minLandRatio", 0.40f);
+        m_mapGenConfig.riverMaxRetries = jMap.value("maxRetries", 100);
+        m_mapGenConfig.baseRadius = jMap.value("baseRadius", 8);
+        if (jMap.contains("playerBase") && jMap["playerBase"].is_array() && jMap["playerBase"].size() >= 2) {
+            m_mapGenConfig.playerBaseX = jMap["playerBase"][0].get<int>();
+            m_mapGenConfig.playerBaseY = jMap["playerBase"][1].get<int>();
+        }
+        if (jMap.contains("enemyBase") && jMap["enemyBase"].is_array() && jMap["enemyBase"].size() >= 2) {
+            m_mapGenConfig.enemyBaseX = jMap["enemyBase"][0].get<int>();
+            m_mapGenConfig.enemyBaseY = jMap["enemyBase"][1].get<int>();
+        }
+    }
+    if (root.contains("riverFordCount") && root["riverFordCount"].is_number_integer()) {
+        m_mapGenConfig.riverFordCount = root["riverFordCount"].get<int>();
+    }
+    if (root.contains("lakeMax") && root["lakeMax"].is_number_integer()) {
+        m_mapGenConfig.lakeMax = root["lakeMax"].get<int>();
+    }
+
     g_configCache[filePath] = *this;
     return true;
 }
@@ -268,6 +294,8 @@ DetailedTerrainType SimConfig::classifyTerrain(const WorldMap& map, int tileX, i
             return DetailedTerrainType::Mountain;
         case TerrainType::River:
             return DetailedTerrainType::River;
+        case TerrainType::Ford:
+            return DetailedTerrainType::Ford;
         case TerrainType::Lake:
             // Quy tac 2: Lake cua M2 dung chi so COASTAL_SEA
             return DetailedTerrainType::CoastalSea;

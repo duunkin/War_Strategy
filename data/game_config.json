@@ -140,10 +140,10 @@
     },
     "RIVER": {
       "id": 6,
-      "name": "Sông / Hồ",
+      "name": "Sông",
       "elevation": 0,
       "speed": {
-        "infantry": 0.45,
+        "infantry": 0,
         "vehicle": 0,
         "ship": 0,
         "air": 1.0
@@ -476,5 +476,22 @@
       "Asagiri nhanh hơn Mogami theo Doc (sim cũ ngược lại)",
       "Tư lệnh 2.46 ô/s (Doc: 40 km/h)"
     ]
+  },
+  "mapgen": {
+    "riverFordCount": 3,
+    "lakeMax": 6,
+    "riverFordMinDistance": 15,
+    "riverMaxDeviation": 3.0,
+    "minLandRatio": 0.4,
+    "maxRetries": 100,
+    "playerBase": [
+      20,
+      48
+    ],
+    "enemyBase": [
+      107,
+      48
+    ],
+    "baseRadius": 8
   }
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../map/WorldMap.hpp"
+#include "mapgen/MapGenConfig.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -165,11 +166,14 @@ public:
     [[nodiscard]] int getTileMeters() const { return m_scale.tileMeters; }
     [[nodiscard]] int getMatchDurationSec() const { return m_matchDurationSec; }
     [[nodiscard]] const VisionConfig& getVisionConfig() const { return m_visionConfig; }
+    [[nodiscard]] const mapgen::MapGenConfig& getMapGenConfig() const { return m_mapGenConfig; }
+    [[nodiscard]] mapgen::MapGenConfig& getMapGenConfig() { return m_mapGenConfig; }
 
 private:
     ScaleConfig m_scale;
     int m_matchDurationSec{3600};
     VisionConfig m_visionConfig;
+    mapgen::MapGenConfig m_mapGenConfig;
     std::vector<TerrainProperty> m_terrains; // 8 loại theo id 0..7
     std::vector<UnitTypeConfig>  m_unitConfigs;
 };

@@ -2,6 +2,7 @@
 
 #include "MapGenConfig.hpp"
 #include <cstdint>
+#include <string>
 
 namespace sim {
 class WorldMap;
@@ -27,6 +28,12 @@ public:
 
     // Sinh bản đồ vào đối tượng WorldMap theo seed và cấu hình cung cấp
     void generate(sim::WorldMap& map, uint64_t seed, const MapGenConfig& config = MapGenConfig{}) const;
+
+    // Xuất bản đồ ra file ảnh PNG (không phụ thuộc thư viện ngoài)
+    static bool exportPng(const sim::WorldMap& map, const std::string& filepath, int scale = 4);
+
+    // Xuất bản đồ ra chuỗi ASCII
+    static std::string exportAscii(const sim::WorldMap& map, int p1X = -1, int p1Y = -1, int p2X = -1, int p2Y = -1);
 };
 
 } // namespace mapgen

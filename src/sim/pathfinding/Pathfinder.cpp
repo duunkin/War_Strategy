@@ -54,12 +54,15 @@ inline DetailedTerrainType getFastDetailedTerrain(const WorldMap& map, const Sim
     TerrainType raw = map.getTile(x, y);
     if (domain == UnitDomain::Land) {
         if (raw == TerrainType::Sea) return DetailedTerrainType::DeepSea; // Biển không thể đi với lục quân
+        if (raw == TerrainType::River || raw == TerrainType::Lake) return DetailedTerrainType::River; // Sông/Hồ không đi được với lục quân
+        if (raw == TerrainType::Ford) return DetailedTerrainType::Ford; // Chỗ cạn vượt sông
         return config.classifyTerrain(map, x, y);
     }
     if (domain == UnitDomain::Sea) {
-        if (raw != TerrainType::Sea && raw != TerrainType::Lake) return DetailedTerrainType::Plain; // Đất liền không đi được
-        return (raw == TerrainType::Lake) ? DetailedTerrainType::CoastalSea : DetailedTerrainType::DeepSea;
+        if (raw != TerrainType::Sea) return DetailedTerrainType::Plain; // Tàu không vào hồ, sông, đất liền
+        return config.classifyTerrain(map, x, y);
     }
+    if (raw == TerrainType::Ford) return DetailedTerrainType::Ford;
     return config.classifyTerrain(map, x, y);
 }
 
